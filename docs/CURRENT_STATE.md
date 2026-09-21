@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Foundation / Pre-MVP** — Скелет бота с обработчиками команд, схемой БД, Docker-конфигом. PostgreSQL запущен, схема применена (`db push`). Нет runtime-проверки с Telegram.
+**Pre-MVP / News Collection** — Этап Telegram runtime завершён: polling, базовые команды и User + Preferences upsert проверены. Текущий фокус — сбор новостей из доверенных источников.
 
 ## Статус проверки
 
@@ -12,9 +12,10 @@
 | Prisma Client Generation | ✅ Verified | `npx prisma generate` проходит |
 | Database Connection | ✅ Verified | PostgreSQL запущен, `db push` выполнен, схема синхронизирована |
 | Database Migrations | ❌ Not Created | `prisma migrate` не запускался (использовался `db push`) |
-| Bot Startup (polling) | ✅ Build-Verified | Код компилируется, не тестировался в runtime |
-| Telegram Commands | ❌ Not Runtime-Verified | Обработчики есть, никогда не тестировались с реальным API |
-| BOT_TOKEN Usage | ❌ Not Verified | В `.env` placeholder |
+| Bot Startup (polling) | ✅ Runtime-Verified | `npm run dev` дошёл до polling; авторизация Telegram API через `getMe` успешна |
+| Telegram Commands | ✅ Runtime-Verified | `/start`, `/help`, `/settings`, `/latest`, fallback и повторный запуск проверены пользователем |
+| BOT_TOKEN Usage | ✅ Verified | Токен перевыпущен; финальная runtime-проверка выполнена с новым токеном |
+| User Persistence | ✅ Runtime-Verified | Первый `/start` создаёт User + UserPreferences, повторный вызов не создаёт дубли |
 | Docker Build | ❌ Not Tested | Docker Engine работает, образ бота не собирался |
 | Tests | ❌ None | Vitest настроен, 0 тестов |
 
@@ -26,12 +27,12 @@
 - Логгер (уровневый консольный вывод)
 - Фабрика бота с session + conversations middleware
 - 4 обработчика команд: `/start`, `/help`, `/settings`, `/latest`
+- User + UserPreferences upsert при `/start` по уникальному `telegramId`
 - Graceful shutdown handlers (SIGINT, SIGTERM)
 - Docker multi-stage build + docker-compose (PostgreSQL + бот)
 
 ## Не реализовано (Схема есть, кода нет)
 
-- Персистентность пользователя при `/start` (upsert User + Preferences)
 - Сервис сбора новостей (RSS/API)
 - Логика дедупликации
 - Оценка важности
@@ -47,15 +48,14 @@
 - Conversations middleware загружен но не используется
 - Webhook mode не реализован
 - Тесты не написаны
-- `.env` содержит placeholder-значения
 
 ## Последняя выполненная работа
-Инфраструктура команд бота с 4 хендлерами; Prisma схема; Docker конфиг; build/lint проходят; PostgreSQL запущен, схема применена (`db push`).
+Этап Telegram runtime завершён: новый токен проверен, все команды и fallback работают, User + UserPreferences upsert подтверждён первым и повторным `/start`.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Добавить реальный `BOT_TOKEN` в `.env`
-2. `npm run dev` и протестировать `/start` в Telegram
-3. Проверить ответ бота в runtime
+1. Определить доверенные AI/LLM-источники
+2. Реализовать сервис получения и нормализации новостей из RSS/API
+3. Проверить получение реальных статей в runtime
 
 ## Последние успешные команды
 ```
@@ -63,4 +63,7 @@ npm run build     ✅
 npm run lint      ✅
 npx prisma generate   ✅
 npx prisma db push    ✅
+npm run dev           ✅ polling startup
+Telegram API getMe    ✅
+Prisma SELECT 1       ✅
 ```

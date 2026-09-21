@@ -1,8 +1,6 @@
 # BACKLOG.md
 
 ## Now
-- **Telegram runtime verification** — Добавить реальный BOT_TOKEN, запустить бот (`npm run dev`), протестировать `/start` в Telegram
-- **PostgreSQL integration** — Проверить подключение Prisma в runtime, протестировать User upsert при `/start`
 - **Сборщик новостей** — Реализовать сервис fetching из RSS/API
 - **Источники новостей** — Определить и настроить доверенные источники AI/LLM
 - **Сохранение и дедупликация** — Сохранять статьи с URL-based дедупликацией

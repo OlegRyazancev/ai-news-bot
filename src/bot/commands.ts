@@ -1,5 +1,6 @@
 import type { CommandContext } from 'grammy';
 import type { BotContext } from './index';
+import { prisma } from '../db/client';
 import { logger } from '../utils/logger';
 
 export async function startCommand(ctx: CommandContext<BotContext>) {
@@ -7,6 +8,32 @@ export async function startCommand(ctx: CommandContext<BotContext>) {
   if (!user) return;
 
   logger.info('User started the bot', { userId: user.id, username: user.username });
+
+  const userData = {
+    username: user.username ?? null,
+    firstName: user.first_name,
+    lastName: user.last_name ?? null,
+    languageCode: user.language_code ?? null,
+    isActive: true,
+  };
+
+  await prisma.user.upsert({
+    where: { telegramId: BigInt(user.id) },
+    create: {
+      telegramId: BigInt(user.id),
+      ...userData,
+      preferences: { create: {} },
+    },
+    update: {
+      ...userData,
+      preferences: {
+        upsert: {
+          create: {},
+          update: {},
+        },
+      },
+    },
+  });
 
   const welcomeMessage = `
 🤖 <b>Welcome to AI News Bot!</b>

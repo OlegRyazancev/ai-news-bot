@@ -47,7 +47,8 @@ src/index.ts
         ├── conversations middleware (@grammyjs/conversations)
         ├── error handler → logger
         ├── command handlers → src/bot/commands.ts
-        │   └── logger
+        │   ├── logger
+        │   └── Prisma Client → User + UserPreferences upsert
         └── env config → src/utils/config.ts
             └── zod schema validation
 src/db/client.ts
@@ -59,8 +60,8 @@ src/db/client.ts
 
 | Модель | Назначение | Статус |
 |-------|---------|--------|
-| `User` | Профиль пользователя Telegram | DEFINED (unused) |
-| `UserPreferences` | Настройки уведомлений | DEFINED (unused) |
+| `User` | Профиль пользователя Telegram | `/start` UPSERT (runtime-verified) |
+| `UserPreferences` | Настройки уведомлений | `/start` CREATE IF MISSING (runtime-verified) |
 | `Subscription` | Тематические подписки пользователя | DEFINED (unused) |
 | `NewsArticle` | Собранные новостные статьи | DEFINED (unused) |
 | `NewsDigest` | История ежедневных дайджестов | DEFINED (unused) |
@@ -72,7 +73,7 @@ src/db/client.ts
 | Интеграция | Библиотека | Статус |
 |-------------|---------|--------|
 | Telegram Bot API | grammY | CONFIGURED (polling) |
-| PostgreSQL | Prisma Client | SCHEMA ONLY |
+| PostgreSQL | Prisma Client | SCHEMA APPLIED; `/start` INTEGRATION RUNTIME-VERIFIED |
 | LLM (суммаризация, классификация) | — | PLANNED |
 | News Sources (RSS, APIs) | — | PLANNED |
 | Scheduler (cron) | — | PLANNED |
@@ -80,7 +81,7 @@ src/db/client.ts
 ## Персистентность
 
 - **Primary**: PostgreSQL через Prisma ORM
-- **Connection**: `DATABASE_URL` env var (валидируется Zod)
+- **Connection**: `DATABASE_URL` env var (Zod принимает только `postgresql://` / `postgres://`)
 - **Migrations**: Не созданы
 - **Dev Logging**: Query/error/warn в development, только error в production
 
@@ -104,7 +105,7 @@ src/db/client.ts
 
 - **Mode**: Long polling (`bot.start()`)
 - **Middleware**: Session (пустой `SessionData`), Conversations (загружен, не используется)
-- **Error Handling**: Global catch → logger.error
+- **Error Handling**: Global catch → logger.error с безопасными метаданными без полного grammY context
 - **Unknown Commands**: Fallback-ответ с подсказкой help
 - **Webhook**: Не реализован
 
@@ -124,6 +125,7 @@ Middleware: session → conversations → error handler
 Command Handler (startCommand, helpCommand, etc.)
        │
        ├── logger.info/warn/error
+       ├── /start → Prisma upsert → PostgreSQL
        └── ctx.reply() → Telegram
 ```
 

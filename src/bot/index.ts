@@ -22,7 +22,10 @@ export function createBot(): Bot<BotContext> {
 
   // Error handler
   bot.catch((err) => {
-    logger.error('Bot error', { error: err.error, ctx: err.ctx });
+    logger.error('Bot error', {
+      error: err.error,
+      updateId: err.ctx.update.update_id,
+    });
   });
 
   // Commands
