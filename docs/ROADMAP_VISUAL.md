@@ -1,0 +1,46 @@
+# AI News Bot — Visual Roadmap
+
+Это компактное визуальное представление проекта для просмотра в Obsidian. Канонический roadmap находится в [ROADMAP.md](./ROADMAP.md).
+
+## Сейчас
+
+- **Текущий этап:** 1. Telegram runtime
+- **Статус:** 🟡 В работе
+- **Подтверждено:** проект собирается, lint проходит, Prisma Client генерируется, PostgreSQL 16 запущен через Docker и доступен, Prisma schema применена через `prisma db push`, Telegram handlers существуют и компилируются.
+- **Следующий крупный milestone:** запустить бота с реальным `BOT_TOKEN`, проверить `/start` через реальный Telegram API и подтвердить сохранение пользователя в PostgreSQL.
+
+## Карта этапов
+
+```mermaid
+flowchart TD
+    S0["✅ 0. Foundation / базовая инфраструктура"] --> S1["🟡 1. Telegram runtime"]
+    S1 --> S2["⬜ 2. Сбор новостей"]
+    S2 --> S3["⬜ 3. Хранение и дедупликация"]
+    S3 --> S4["⬜ 4. LLM-обработка"]
+    S4 --> S5["⬜ 5. Ежедневный дайджест"]
+    S5 --> S6["⬜ 6. Breaking News"]
+    S6 --> S7["⬜ 7. Закреплённая шпаргалка по AI-моделям"]
+    S7 --> S8["⬜ 8. Q&A по истории новостей"]
+    S8 --> S9["🟡 9. Deployment / эксплуатация"]
+```
+
+## Этапы кратко
+
+- ✅ 0. Foundation / базовая инфраструктура
+- 🟡 1. Telegram runtime
+- ⬜ 2. Сбор новостей
+- ⬜ 3. Хранение и дедупликация
+- ⬜ 4. LLM-обработка
+- ⬜ 5. Ежедневный дайджест
+- ⬜ 6. Breaking News
+- ⬜ 7. Закреплённая шпаргалка по AI-моделям
+- ⬜ 8. Q&A по истории новостей
+- 🟡 9. Deployment / эксплуатация
+
+## Быстрые ссылки
+
+- [Roadmap](./ROADMAP.md)
+- [Current State](./CURRENT_STATE.md)
+- [Backlog](./BACKLOG.md)
+- [Architecture](./ARCHITECTURE.md)
+- [Decisions](./DECISIONS.md)
