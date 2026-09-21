@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            BigInt    @id @default(autoincrement())
+  telegramId    BigInt    @unique
+  username      String?
+  firstName     String?
+  lastName      String?
+  languageCode  String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  preferences   UserPreferences?
+  subscriptions Subscription[]
+  digests       NewsDigest[]
+}
+
+model UserPreferences {
+  id              BigInt  @id @default(autoincrement())
+  userId          BigInt  @unique
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  receiveNews     Boolean @default(true)
+  receiveDigest   Boolean @default(false)
+  digestTime      String? // HH:MM format
+  timezone        String  @default("UTC")
+  minRelevance    Float   @default(0.5)
+  maxNewsPerDay   Int     @default(10)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Subscription {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  topic     String
+  keywords  String[]
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, topic])
+}
+
+model NewsArticle {
+  id          BigInt    @id @default(autoincrement())
+  title       String
+  summary     String?
+  content     String?
+  url         String    @unique
+  source      String
+  author      String?
+  publishedAt DateTime
+  imageUrl    String?
+  language    String    @default("en")
+  relevance   Float     @default(0.0)
+  topics      String[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([publishedAt])
+  @@index([source])
+  @@index([relevance])
+}
+
+model NewsDigest {
+  id        BigInt   @id @default(autoincrement())
+  userId    BigInt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  articles  BigInt[]
+  sentAt    DateTime @default(now())
+  createdAt DateTime @default(now())
+}
