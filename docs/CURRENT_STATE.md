@@ -5,23 +5,23 @@
 
 ## Статус проверки
 
-| Категория | Статус | Примечания |
-|----------|--------|-------|
-| TypeScript Build | ✅ Verified | `npm run build` проходит |
-| ESLint | ✅ Verified | `npm run lint` проходит |
-| Prisma Client Generation | ✅ Verified | `npx prisma generate` проходит |
-| Database Connection | ✅ Verified | PostgreSQL запущен, `db push` выполнен, схема синхронизирована |
-| Database Migrations | ❌ Not Created | `prisma migrate` не запускался (использовался `db push`) |
-| Bot Startup (polling) | ✅ Runtime-Verified | `npm run dev` дошёл до polling; авторизация Telegram API через `getMe` успешна |
-| Telegram Commands | ✅ Runtime-Verified | `/start`, `/help`, `/settings`, `/latest`, fallback и повторный запуск проверены пользователем |
-| BOT_TOKEN Usage | ✅ Verified | Токен перевыпущен; финальная runtime-проверка выполнена с новым токеном |
-| User Persistence | ✅ Runtime-Verified | Первый `/start` создаёт User + UserPreferences, повторный вызов не создаёт дубли |
-| News Collection | ✅ Runtime-Verified | Агент и пользователь проверили все 8 RSS/Atom-фидов и нормализованные статьи |
-| Collection Scheduler | ✅ Runtime-Verified | Startup и cron-циклы проверены вместе с Telegram polling; graceful shutdown подтверждён |
-| Article Persistence | ✅ Runtime-Verified | Реальный batch создал записи в PostgreSQL; повторные URL пропущены без изменения данных |
+| Категория                    | Статус             | Примечания                                                                                      |
+| ---------------------------- | ------------------ | ----------------------------------------------------------------------------------------------- |
+| TypeScript Build             | ✅ Verified         | `npm run build` проходит                                                                        |
+| ESLint                       | ✅ Verified         | `npm run lint` проходит                                                                         |
+| Prisma Client Generation     | ✅ Verified         | `npx prisma generate` проходит                                                                  |
+| Database Connection          | ✅ Verified         | PostgreSQL запущен, `db push` выполнен, схема синхронизирована                                  |
+| Database Migrations          | ❌ Not Created      | `prisma migrate` не запускался (использовался `db push`)                                        |
+| Bot Startup (polling)        | ✅ Runtime-Verified | `npm run dev` дошёл до polling; авторизация Telegram API через `getMe` успешна                  |
+| Telegram Commands            | ✅ Runtime-Verified | `/start`, `/help`, `/settings`, `/latest`, fallback и повторный запуск проверены пользователем  |
+| BOT_TOKEN Usage              | ✅ Verified         | Токен перевыпущен; финальная runtime-проверка выполнена с новым токеном                         |
+| User Persistence             | ✅ Runtime-Verified | Первый `/start` создаёт User + UserPreferences, повторный вызов не создаёт дубли                |
+| News Collection              | ✅ Runtime-Verified | Агент и пользователь проверили все 8 RSS/Atom-фидов и нормализованные статьи                    |
+| Collection Scheduler         | ✅ Runtime-Verified | Startup и cron-циклы проверены вместе с Telegram polling; graceful shutdown подтверждён         |
+| Article Persistence          | ✅ Runtime-Verified | Реальный batch создал записи в PostgreSQL; повторные URL пропущены без изменения данных         |
 | `/latest` with Database Data | ✅ Runtime-Verified | Реальные статьи, ссылки, порядок и очистка Markdown-маркеров проверены пользователем в Telegram |
-| Docker Build | ❌ Not Tested | Docker Engine работает, образ бота не собирался |
-| Tests | ✅ Verified | 5 test files, 18 unit tests проходят |
+| Docker Build                 | ❌ Not Tested       | Docker Engine работает, образ бота не собирался                                                 |
+| Tests                        | ✅ Verified         | 5 test files, 18 unit tests проходят                                                            |
 
 ## Реализовано (Код есть, Build-Verified)
 
