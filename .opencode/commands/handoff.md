@@ -50,9 +50,14 @@ npm run lint                  # Must pass
 - Используй "Reason: not documented" если причина неизвестна
 
 ### 8. Verify Documentation Matches Code
-- Spot-check: отражают ли доки реальную реализацию?
-- Таблицы команд актуальны?
-- Структура проекта актуальна?
+- Проверь `README.md`, `PROJECT.md`, `ARCHITECTURE.md`, `CURRENT_STATE.md`, `BACKLOG.md`, `DECISIONS.md`, roadmap и применимые checklist.
+- Таблицы команд, структура проекта, data flow и статусы интеграций актуальны?
+- Если менялись запуск или конфигурация, согласованы ли `.env.example`, Docker-конфигурация и package scripts?
+- Нет ли устаревших placeholders, названий этапов, статусов, количеств тестов/источников и operational instructions?
+- Разрешаются ли локальные Markdown-ссылки?
+- Проверен ли финальный `git diff` после документационных исправлений?
+
+Не утверждай, что все файлы синхронизированы, если выполнен только spot-check. Назови проверенный охват и исключения. Generated files, зависимости и секретный `.env` в документационный аудит не входят.
 
 ## Output Format
 
@@ -66,6 +71,8 @@ npm run lint                  # Must pass
 **Verification:** npm run build ✅ / ❌, npm run lint ✅ / ❌
 
 **Updated Docs:** CURRENT_STATE.md, BACKLOG.md[, ARCHITECTURE.md, DECISIONS.md]
+
+**Documentation Audit:** [проверенный охват и исключения]
 
 **Next Agent Should:** [конкретный следующий шаг из обновлённого CURRENT_STATE.md]
 ```
