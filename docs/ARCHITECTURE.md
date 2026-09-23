@@ -14,8 +14,10 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | CONFIGURED (0 tests) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED (8 unit tests) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
+| Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
+| Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 
 ## Структура проекта
 
@@ -29,6 +31,7 @@ ai-news-bot/
 │   │   └── commands.ts        # Обработчики команд (/start, /help, /settings, /latest)
 │   ├── db/
 │   │   └── client.ts          # PrismaClient singleton с dev-логированием
+│   ├── news/                   # Источники, RSS/Atom parsing, нормализация и scheduler
 │   ├── utils/
 │   │   ├── config.ts          # Zod-валидированная конфигурация окружения (кэшированная)
 │   │   └── logger.ts          # Уровневый консольный логгер
@@ -54,6 +57,11 @@ src/index.ts
 src/db/client.ts
     └── @prisma/client (singleton)
         └── DATABASE_URL from env
+src/index.ts
+    └── NewsCollectionScheduler → node-cron
+        └── NewsCollectionRunner
+            └── NewsCollector
+                └── RssFeedReader → 8 RSS/Atom sources
 ```
 
 ## Схема БД (Prisma)
@@ -75,8 +83,8 @@ src/db/client.ts
 | Telegram Bot API | grammY | CONFIGURED (polling) |
 | PostgreSQL | Prisma Client | SCHEMA APPLIED; `/start` INTEGRATION RUNTIME-VERIFIED |
 | LLM (суммаризация, классификация) | — | PLANNED |
-| News Sources (RSS, APIs) | — | PLANNED |
-| Scheduler (cron) | — | PLANNED |
+| News Sources | Curated RSS mix (8 feeds) | RUNTIME-VERIFIED |
+| Scheduler | `node-cron` (embedded) | RUNTIME-VERIFIED |
 
 ## Персистентность
 
@@ -87,10 +95,9 @@ src/db/client.ts
 
 ## Фоновые задачи / Шедулеры
 
-**PLANNED** — Библиотека шедулера не установлена. Требуется для:
-- Доставки ежедневного дайджеста
-- Мониторинга breaking news
-- Интервалов сбора новостей
+**IMPLEMENTED FOR COLLECTION** — Встроенный `node-cron` запускает сбор по валидируемому cron-выражению (по умолчанию каждые 30 минут). Реализованы startup-run, защита от перекрытия и остановка scheduler. Будущие задачи:
+- Доставка ежедневного дайджеста
+- Мониторинг breaking news
 
 ## LLM Integration
 
@@ -129,21 +136,14 @@ Command Handler (startCommand, helpCommand, etc.)
        └── ctx.reply() → Telegram
 ```
 
-### Planned (News Collection)
+### Current (News Collection)
 ```
-Cron Scheduler → News Collector → RSS/API Sources
-                      │
-                      ▼
-              Deduplication (URL)
-                      │
-                      ▼
-              Importance Scoring
-                      │
-                      ▼
-              LLM Summarization
-                      │
-                      ▼
-              Save to NewsArticle
+node-cron → NewsCollectionRunner → NewsCollector → 8 RSS/Atom Sources
+                   │                    │
+                   │                    ├── timeout + source error isolation
+                   │                    └── normalized articles
+                   ▼
+        downstream handler (logging only; persistence is Stage 3)
 ```
 
 ### Planned (Digest Delivery)
@@ -186,13 +186,11 @@ docker-compose logs -f bot
 | `npm run db:push` | Push schema to DB |
 | `npm run db:studio` | Open Prisma Studio |
 | `npm run lint` | ESLint check |
-| `npm run test` | Vitest (no tests yet) |
+| `npm run test` | Vitest unit tests |
 
 ## UNKNOWN / Undetermined
 
 - LLM Provider (OpenAI, Anthropic, local, etc.)
-- News Sources (конкретные RSS-фиды, API)
-- Scheduler Library (`node-cron`, `bull`, in-bot `setInterval`)
 - Webhook deployment configuration
 - Production logging aggregation
 - Health check endpoints

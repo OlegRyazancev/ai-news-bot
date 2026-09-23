@@ -27,6 +27,10 @@ services:
       NODE_ENV: production
       BOT_TOKEN: ${BOT_TOKEN}
       DATABASE_URL: postgresql://${DB_USER:-botuser}:${DB_PASSWORD:-botpass}@postgres:5432/${DB_NAME:-ai_news_bot}?schema=public
+      NEWS_COLLECTION_CRON: "${NEWS_COLLECTION_CRON:-*/30 * * * *}"
+      NEWS_COLLECTION_RUN_ON_STARTUP: "${NEWS_COLLECTION_RUN_ON_STARTUP:-true}"
+      NEWS_FETCH_TIMEOUT_MS: "${NEWS_FETCH_TIMEOUT_MS:-15000}"
+      NEWS_MAX_ITEMS_PER_SOURCE: "${NEWS_MAX_ITEMS_PER_SOURCE:-50}"
     depends_on:
       postgres:
         condition: service_healthy

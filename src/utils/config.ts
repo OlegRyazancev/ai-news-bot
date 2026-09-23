@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import cron from 'node-cron';
 import { z } from 'zod';
 
 const envSchema = z.object({
@@ -12,6 +13,16 @@ const envSchema = z.object({
     ),
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  NEWS_COLLECTION_CRON: z
+    .string()
+    .default('*/30 * * * *')
+    .refine(value => cron.validate(value), 'NEWS_COLLECTION_CRON must be a valid cron expression'),
+  NEWS_COLLECTION_RUN_ON_STARTUP: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform(value => value === 'true'),
+  NEWS_FETCH_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60000).default(15000),
+  NEWS_MAX_ITEMS_PER_SOURCE: z.coerce.number().int().min(1).max(200).default(50),
 });
 
 export type Env = z.infer<typeof envSchema>;

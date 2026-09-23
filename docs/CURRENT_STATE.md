@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / News Collection** — Этап Telegram runtime завершён: polling, базовые команды и User + Preferences upsert проверены. Текущий фокус — сбор новостей из доверенных источников.
+**Pre-MVP / Storage and Deduplication Planning** — Этап 2 завершён: сбор из 8 RSS/Atom-источников, нормализация, startup-run, регулярный запуск и совместная работа с Telegram polling подтверждены агентом и пользователем. Следующий этап — хранение и дедупликация.
 
 ## Статус проверки
 
@@ -16,8 +16,10 @@
 | Telegram Commands | ✅ Runtime-Verified | `/start`, `/help`, `/settings`, `/latest`, fallback и повторный запуск проверены пользователем |
 | BOT_TOKEN Usage | ✅ Verified | Токен перевыпущен; финальная runtime-проверка выполнена с новым токеном |
 | User Persistence | ✅ Runtime-Verified | Первый `/start` создаёт User + UserPreferences, повторный вызов не создаёт дубли |
+| News Collection | ✅ Runtime-Verified | Агент и пользователь проверили все 8 RSS/Atom-фидов и нормализованные статьи |
+| Collection Scheduler | ✅ Runtime-Verified | Startup и cron-циклы проверены вместе с Telegram polling; graceful shutdown подтверждён |
 | Docker Build | ❌ Not Tested | Docker Engine работает, образ бота не собирался |
-| Tests | ❌ None | Vitest настроен, 0 тестов |
+| Tests | ✅ Verified | 3 test files, 8 unit tests проходят |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -30,10 +32,13 @@
 - User + UserPreferences upsert при `/start` по уникальному `telegramId`
 - Graceful shutdown handlers (SIGINT, SIGTERM)
 - Docker multi-stage build + docker-compose (PostgreSQL + бот)
+- Реестр из 8 согласованных официальных и независимых RSS/Atom-источников
+- RSS/Atom fetching с timeout, нормализацией и изоляцией ошибок источников
+- Конфигурируемый `node-cron` scheduler, startup-run и защита от перекрытия циклов
+- Unit-тесты нормализации, частичного отказа и overlap guard
 
 ## Не реализовано (Схема есть, кода нет)
 
-- Сервис сбора новостей (RSS/API)
 - Логика дедупликации
 - Оценка важности
 - LLM интеграция (суммаризация, классификация)
@@ -47,23 +52,26 @@
 - `SessionData` пуст — состояние сессии не используется
 - Conversations middleware загружен но не используется
 - Webhook mode не реализован
-- Тесты не написаны
+- Нет интеграционных тестов Telegram и PostgreSQL
 
 ## Последняя выполненная работа
-Этап Telegram runtime завершён: новый токен проверен, все команды и fallback работают, User + UserPreferences upsert подтверждён первым и повторным `/start`.
+Этап 2 «Сбор новостей» завершён после успешных автоматических, runtime- и пользовательских проверок.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Определить доверенные AI/LLM-источники
-2. Реализовать сервис получения и нормализации новостей из RSS/API
-3. Проверить получение реальных статей в runtime
+1. Провести анализ и создать checklist этапа 3 «Хранение и дедупликация»
+2. Реализовать сохранение статей с URL-based дедупликацией
+3. Подключить `/latest` к реальным данным PostgreSQL
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
+npm run test      ✅ 8 tests
 npx prisma generate   ✅
 npx prisma db push    ✅
 npm run dev           ✅ polling startup
 Telegram API getMe    ✅
 Prisma SELECT 1       ✅
+RSS/Atom collection   ✅ 8/8 sources
+node-cron collection  ✅ startup + scheduled cycles
 ```
