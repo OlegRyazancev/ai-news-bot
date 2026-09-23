@@ -1,7 +1,11 @@
 import type { CommandContext } from 'grammy';
 import type { BotContext } from './index';
 import { prisma } from '../db/client';
+import { NewsArticleStore } from '../news/article-store';
+import { formatLatestArticles, LATEST_ARTICLE_LIMIT } from '../news/latest';
 import { logger } from '../utils/logger';
+
+const articleStore = new NewsArticleStore(prisma.newsArticle);
 
 export async function startCommand(ctx: CommandContext<BotContext>) {
   const user = ctx.from;
@@ -102,8 +106,17 @@ Configure your notification preferences:
 }
 
 export async function latestCommand(ctx: CommandContext<BotContext>) {
-  await ctx.reply(
-    '📰 <b>Latest AI News</b>\n\nNews fetching functionality coming soon!',
-    { parse_mode: 'HTML' }
-  );
+  try {
+    const articles = await articleStore.findLatest({ limit: LATEST_ARTICLE_LIMIT });
+    await ctx.reply(formatLatestArticles(articles), {
+      parse_mode: 'HTML',
+      link_preview_options: { is_disabled: true },
+    });
+  } catch (error) {
+    logger.error('Failed to load latest news articles', {
+      userId: ctx.from?.id,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+    await ctx.reply('⚠️ Unable to load the latest news right now. Please try again later.');
+  }
 }

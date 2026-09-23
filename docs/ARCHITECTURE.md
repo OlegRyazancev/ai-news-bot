@@ -6,15 +6,15 @@
 |-------|------------|---------|--------|
 | Runtime | Node.js | >=20.0.0 | IMPLEMENTED |
 | Language | TypeScript | ^5.3.3 | IMPLEMENTED |
-| Telegram Framework | grammY | ^1.21.1 | IMPLEMENTED |
+| Telegram Framework | grammY | ^1.21.1 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Conversations | @grammyjs/conversations | ^1.1.2 | IMPLEMENTED (unused) |
-| Database | PostgreSQL | 16 (Docker) | SCHEMA DEFINED |
+| Database | PostgreSQL | 16 (Docker) | IMPLEMENTED; RUNTIME-VERIFIED |
 | ORM | Prisma | ^5.10.0 | IMPLEMENTED |
 | Config Validation | Zod | ^3.22.4 | IMPLEMENTED |
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED (8 unit tests) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED (18 unit tests) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
@@ -31,7 +31,7 @@ ai-news-bot/
 │   │   └── commands.ts        # Обработчики команд (/start, /help, /settings, /latest)
 │   ├── db/
 │   │   └── client.ts          # PrismaClient singleton с dev-логированием
-│   ├── news/                   # Источники, RSS/Atom parsing, нормализация и scheduler
+│   ├── news/                   # Сбор, нормализация, persistence, latest formatting и scheduler
 │   ├── utils/
 │   │   ├── config.ts          # Zod-валидированная конфигурация окружения (кэшированная)
 │   │   └── logger.ts          # Уровневый консольный логгер
@@ -60,8 +60,11 @@ src/db/client.ts
 src/index.ts
     └── NewsCollectionScheduler → node-cron
         └── NewsCollectionRunner
-            └── NewsCollector
-                └── RssFeedReader → 8 RSS/Atom sources
+            ├── NewsCollector
+            │   └── RssFeedReader → 8 RSS/Atom sources
+            └── NewsArticleStore → Prisma Client → PostgreSQL
+src/bot/commands.ts
+    └── /latest → NewsArticleStore → Prisma Client → PostgreSQL
 ```
 
 ## Схема БД (Prisma)
@@ -71,7 +74,7 @@ src/index.ts
 | `User` | Профиль пользователя Telegram | `/start` UPSERT (runtime-verified) |
 | `UserPreferences` | Настройки уведомлений | `/start` CREATE IF MISSING (runtime-verified) |
 | `Subscription` | Тематические подписки пользователя | DEFINED (unused) |
-| `NewsArticle` | Собранные новостные статьи | DEFINED (unused) |
+| `NewsArticle` | Собранные новостные статьи | INSERT-ONLY PERSISTENCE; RUNTIME-VERIFIED |
 | `NewsDigest` | История ежедневных дайджестов | DEFINED (unused) |
 
 **Key Relations:** User 1:1 Preferences, User 1:N Subscriptions, User 1:N Digests, Digests хранят массив ID статей.
@@ -80,8 +83,8 @@ src/index.ts
 
 | Интеграция | Библиотека | Статус |
 |-------------|---------|--------|
-| Telegram Bot API | grammY | CONFIGURED (polling) |
-| PostgreSQL | Prisma Client | SCHEMA APPLIED; `/start` INTEGRATION RUNTIME-VERIFIED |
+| Telegram Bot API | grammY | RUNTIME-VERIFIED (polling) |
+| PostgreSQL | Prisma Client | SCHEMA APPLIED; USER AND ARTICLE PERSISTENCE RUNTIME-VERIFIED |
 | LLM (суммаризация, классификация) | — | PLANNED |
 | News Sources | Curated RSS mix (8 feeds) | RUNTIME-VERIFIED |
 | Scheduler | `node-cron` (embedded) | RUNTIME-VERIFIED |
@@ -90,6 +93,8 @@ src/index.ts
 
 - **Primary**: PostgreSQL через Prisma ORM
 - **Connection**: `DATABASE_URL` env var (Zod принимает только `postgresql://` / `postgres://`)
+- **Article writes**: Batch `createMany` с `skipDuplicates` и уникальным `url`; повторные записи не обновляются
+- **Latest reads**: До 10 статей по `publishedAt DESC`, затем `id DESC`
 - **Migrations**: Не созданы
 - **Dev Logging**: Query/error/warn в development, только error в production
 
@@ -143,7 +148,9 @@ node-cron → NewsCollectionRunner → NewsCollector → 8 RSS/Atom Sources
                    │                    ├── timeout + source error isolation
                    │                    └── normalized articles
                    ▼
-        downstream handler (logging only; persistence is Stage 3)
+          NewsArticleStore → PostgreSQL
+                   │
+                   └── insert-only URL deduplication + aggregate statistics
 ```
 
 ### Planned (Digest Delivery)

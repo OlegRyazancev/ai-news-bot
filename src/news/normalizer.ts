@@ -1,4 +1,5 @@
 import type { NewsSource, NormalizedArticle, RawFeedItem, RawMediaNode } from './types';
+import { stripWrappingMarkdownEmphasis } from './text';
 
 function cleanText(value: string | undefined): string | undefined {
   const cleaned = value?.replace(/\s+/g, ' ').trim();
@@ -71,7 +72,8 @@ export function normalizeFeedItem(
   item: RawFeedItem,
   source: NewsSource
 ): NormalizedArticle | null {
-  const title = cleanText(item.title);
+  const rawTitle = cleanText(item.title);
+  const title = rawTitle ? stripWrappingMarkdownEmphasis(rawTitle) : undefined;
   const url = normalizeHttpUrl(item.link) ?? normalizeHttpUrl(item.guid);
   const publishedAt = validDate(item.isoDate, item.pubDate);
 

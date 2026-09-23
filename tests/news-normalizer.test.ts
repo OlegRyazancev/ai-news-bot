@@ -57,6 +57,19 @@ describe('normalizeFeedItem', () => {
     expect(article?.publishedAt).toEqual(new Date('2026-09-22T10:00:00.000Z'));
   });
 
+  it('removes wrapping Markdown emphasis from a title', () => {
+    const article = normalizeFeedItem(
+      {
+        title: '**Formatted article title**',
+        link: 'https://example.com/formatted-article',
+        isoDate: '2026-09-22T10:00:00.000Z',
+      },
+      source
+    );
+
+    expect(article?.title).toBe('Formatted article title');
+  });
+
   it.each([
     { title: undefined, link: 'https://example.com/article', isoDate: '2026-09-22' },
     { title: 'Article', link: 'not-a-url', isoDate: '2026-09-22' },

@@ -37,4 +37,29 @@ describe('NewsCollectionRunner', () => {
     resolveCollection?.(emptyReport);
     await expect(firstRun).resolves.toEqual(emptyReport);
   });
+
+  it('allows a later cycle after the article handler fails', async () => {
+    const collector = {
+      collect: vi.fn().mockResolvedValue(emptyReport),
+    };
+    const logger = {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+    const onArticles = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('Database unavailable'))
+      .mockResolvedValueOnce(undefined);
+    const runner = new NewsCollectionRunner(collector, logger, onArticles);
+
+    await expect(runner.run('startup')).resolves.toBeNull();
+    await expect(runner.run('scheduled')).resolves.toEqual(emptyReport);
+
+    expect(collector.collect).toHaveBeenCalledTimes(2);
+    expect(logger.error).toHaveBeenCalledWith('News collection cycle failed', {
+      trigger: 'startup',
+      error: 'Database unavailable',
+    });
+  });
 });

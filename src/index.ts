@@ -1,5 +1,6 @@
 import { createBot } from './bot';
 import { prisma } from './db/client';
+import { NewsArticleStore } from './news/article-store';
 import { NewsCollector } from './news/collector';
 import { RssFeedReader } from './news/feed-reader';
 import { NewsCollectionRunner, NewsCollectionScheduler } from './news/scheduler';
@@ -15,10 +16,21 @@ async function main() {
   const collector = new NewsCollector(NEWS_SOURCES, feedReader, {
     maxItemsPerSource: env.NEWS_MAX_ITEMS_PER_SOURCE,
   });
-  const collectionRunner = new NewsCollectionRunner(collector, logger, articles => {
+  const articleStore = new NewsArticleStore(prisma.newsArticle);
+  const collectionRunner = new NewsCollectionRunner(collector, logger, async articles => {
     logger.info('Normalized news articles are ready for downstream processing', {
       articleCount: articles.length,
     });
+
+    try {
+      const persistenceResult = await articleStore.save(articles);
+      logger.info('News articles persisted', { ...persistenceResult });
+    } catch (error) {
+      logger.error('News article persistence failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      throw new Error('News article persistence failed');
+    }
   });
   const collectionScheduler = new NewsCollectionScheduler(
     collectionRunner,
