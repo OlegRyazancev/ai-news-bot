@@ -71,24 +71,26 @@ gh pr checks
 
 `/handoff` не переводит stage PR в Ready for review вместо `/stage-close`, не закрывает и не merge-ит PR.
 
-## Output Format
+## Формат ответа
+
+Язык пользовательского ответа определяется разделом **«Язык общения с пользователем»** в `AGENTS.md`.
 
 ```markdown
-## Handoff Complete
+## Передача контекста завершена
 
-**Session Summary:** <2–3 предложения>
-**Branch:** <ветка>
-**Files Changed:** <ключевые файлы>
-**Verification:** <lint/build/tests/runtime факты>
-**Git State:** <clean/dirty, committed/uncommitted, pushed/unpushed>
+**Сводка сессии:** <2–3 предложения>
+**Ветка:** <ветка>
+**Изменённые файлы:** <ключевые файлы>
+**Проверка:** <lint/build/tests/runtime факты>
+**Состояние Git:** <clean/dirty, committed/uncommitted, pushed/unpushed>
 **Pull Request:** <URL + Draft/Ready/отсутствует/недоступно>
 **CI:** <success/pending/failed/not run/unknown>
-**Documentation Audit:** <охват и исключения>
-**Where Stopped:** <точная точка>
-**Next Agent Should:** <одно конкретное действие>
+**Аудит документации:** <охват и исключения>
+**Точка остановки:** <точная точка>
+**Следующее действие агента:** <одно конкретное действие>
 ```
 
-## Rules
+## Правила
 
 - Никогда не commit/push в `main`, не force push и не обходи protection/ruleset.
 - Никогда не merge PR; не закрывай PR без явной команды пользователя.

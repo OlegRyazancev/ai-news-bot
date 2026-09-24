@@ -28,22 +28,24 @@ Read-only восстановить общий контекст проекта, �
 
 Если `gh` недоступен, нет авторизации или PR отсутствует, сообщи это без догадок. Non-zero `gh pr checks` разбери как возможный pending/failed status.
 
-## Output Format
+## Формат ответа
+
+Язык пользовательского ответа определяется разделом **«Язык общения с пользователем»** в `AGENTS.md`.
 
 ```markdown
-## Project Status Summary
+## Сводка состояния проекта
 
-**Where the project is:** <фаза и roadmap stage>
-**What works:** <подтверждённые результаты>
-**What was done last:** <последняя подтверждённая работа>
-**Current branch:** <branch + clean/dirty>
-**Pull request:** <URL + Draft/Ready/отсутствует/не применимо>
+**Текущее состояние:** <фаза и roadmap stage>
+**Что работает:** <подтверждённые результаты>
+**Последняя выполненная работа:** <последняя подтверждённая работа>
+**Текущая ветка:** <branch + clean/dirty>
+**Pull Request:** <URL + Draft/Ready/отсутствует/не применимо>
 **CI:** <success/pending/failed/not run/unknown>
-**Unfinished work:** <текущая точка>
-**Recommended next step:** <одно действие>
+**Незавершённая работа:** <текущая точка>
+**Рекомендуемый следующий шаг:** <одно действие>
 ```
 
-## Rules
+## Правила
 
 - Не изменяй файлы, Git, PR или CI.
 - Не выполняй pull, switch, commit, push, создание/редактирование PR или merge.

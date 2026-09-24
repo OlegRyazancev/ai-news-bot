@@ -117,21 +117,23 @@ git status --short --branch
 
 Сформируй последовательность крупных изменений и проверок. Не начинай application implementation.
 
-### 8. Выдать Stage Kickoff Report
+### 8. Выдать отчёт о старте этапа
+
+Язык пользовательского отчёта определяется разделом **«Язык общения с пользователем»** в `AGENTS.md`.
 
 ```text
-Stage:
-Branch:
-Base main synchronization:
-Current state:
-Already available:
-Missing:
-In scope:
-Out of scope:
-Decisions required:
-Risks:
+Этап:
+Ветка:
+Синхронизация с main:
+Текущее состояние:
+Уже доступно:
+Не хватает:
+В scope:
+Вне scope:
+Требуемые решения:
+Риски:
 Checklist:
-Implementation plan:
+План реализации:
 ```
 
 ### 9. STOP
