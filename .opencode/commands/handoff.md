@@ -64,7 +64,7 @@ gh pr checks
 
 1. сделать содержательный commit;
 2. push текущей ветки без force;
-3. после первого meaningful push создать Draft PR в `main` только если проверка всех состояний подтвердила полное отсутствие PR для этой ветки;
+3. после первого meaningful push создать Draft PR только если проверка всех состояний подтвердила полное отсутствие PR для этой ветки: сформировать body по `.github/pull_request_template.md` во временном файле вне Git и выполнить без интерактивного редактора `gh pr create --draft --base main --head <current-branch> --title "<PR title>" --body-file <temporary-body-file>`;
 4. актуализировать body только у проверенного единственного `OPEN` PR с правильными head/base.
 
 Не создавай commit только для сокрытия незавершённого или сломанного состояния. Если checkpoint не готов либо действует ограничение пользователя, оставь изменения как есть и явно укажи uncommitted/unpushed status.
