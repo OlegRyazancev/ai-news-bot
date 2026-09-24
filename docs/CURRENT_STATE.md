@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / LLM Processing Planning** — Этап 3 завершён: persistence, insert-only дедупликация и `/latest` подтверждены автоматическими, runtime- и пользовательскими проверками. Следующий этап — LLM-обработка.
+**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment, Gemini/Mock adapters и независимый PostgreSQL-backed processor реализованы. Mock и DB concurrency/retry paths проверены автоматически; реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
 
 ## Статус проверки
 
@@ -20,8 +20,11 @@
 | Collection Scheduler         | ✅ Runtime-Verified | Startup и cron-циклы проверены вместе с Telegram polling; graceful shutdown подтверждён         |
 | Article Persistence          | ✅ Runtime-Verified | Реальный batch создал записи в PostgreSQL; повторные URL пропущены без изменения данных         |
 | `/latest` with Database Data | ✅ Runtime-Verified | Реальные статьи, ссылки, порядок и очистка Markdown-маркеров проверены пользователем в Telegram |
-| Docker Build                 | ❌ Not Tested       | Docker Engine работает, образ бота не собирался                                                 |
-| Tests                        | ✅ Verified         | 5 test files, 18 unit tests проходят                                                            |
+| Docker Build                 | ✅ Build-Verified   | `ai-news-bot:stage4` собран; runtime контейнеров с реальными интеграциями ещё не проверен        |
+| LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
+| LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
+| Gemini API                   | ❌ Not Runtime-Verified | Реальный API key и `gemini-2.5-flash-lite` ещё не запускались                                 |
+| Tests                        | ✅ Verified         | 35 unit + 6 PostgreSQL integration tests проходят                                               |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -43,11 +46,19 @@
 - `/latest` на 10 последних статьях PostgreSQL с HTML-экранированием и ограничением размера сообщения
 - Очистка внешних заголовков от обрамляющих Markdown-маркеров при нормализации и отображении
 - Unit-тесты persistence, повторов, latest query, форматирования и recovery после ошибки handler
+- Provider-independent `LlmProvider`, `GeminiProvider` на `@google/genai` 2.24.0 и `MockProvider`
+- Structured JSON contract с повторной Zod-валидацией и недоверенной RSS data boundary
+- Dedicated LLM summary/importance/topics без изменения RSS `summary`/`topics` и `relevance`
+- Processing/provider/model/attempt/timestamp/error/token metadata в `NewsArticle`
+- Независимый LLM scheduler, PostgreSQL atomic claim, claim token и stale `PROCESSING` recovery
+- Bounded attempts, persisted exponential backoff, `Retry-After` и in-process halt на permanent auth/config errors
+- Targeted processing одной явной статьи через `npm run llm:process-article`
+- PostgreSQL integration tests и CI PostgreSQL service
 
-## Не реализовано (Схема есть, кода нет)
+## Не реализовано / не подтверждено
 
-- Оценка важности
-- LLM интеграция (суммаризация, классификация)
+- Реальная Gemini API обработка статьи и оценка качества enrichment
+- Ручная проверка независимой работы polling, collection и Gemini processor
 - Генерация ежедневного дайджеста + шедулер
 - Детекция и доставка breaking news
 - Управление закреплённым сообщением-шпаргалкой
@@ -58,22 +69,25 @@
 - `SessionData` пуст — состояние сессии не используется
 - Conversations middleware загружен но не используется
 - Webhook mode не реализован
-- Нет интеграционных тестов Telegram и PostgreSQL
+- Нет автоматических интеграционных тестов Telegram
+- Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Этап 3 «Хранение и дедупликация» завершён после успешной ручной перепроверки исправленного `/latest`.
+Реализован Stage 4 pipeline до Gemini runtime gate: adapters, structured validation, dedicated schema, независимый processor, retries и PostgreSQL integration tests.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Выбрать LLM-провайдера для этапа 4
-2. Провести анализ и создать checklist этапа 4 «LLM-обработка»
-3. Спланировать суммаризацию, оценку важности и тематическую классификацию
+1. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
+2. Выполнить targeted runtime-проверку `gemini-2.5-flash-lite` на одной явно выбранной статье
+3. Провести ручную проверку polling/collection/processor и только затем рассматривать `/stage-close`
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
-npm run test      ✅ 18 tests
+npm run test      ✅ 35 unit tests
+npm run test:integration ✅ 6 PostgreSQL integration tests
 npx prisma generate   ✅
+npx prisma validate   ✅
 npx prisma db push    ✅
 npm run dev           ✅ polling startup
 Telegram API getMe    ✅
@@ -82,4 +96,6 @@ RSS/Atom collection   ✅ 8/8 sources
 node-cron collection  ✅ startup + scheduled cycles
 Article persistence   ✅ real PostgreSQL, insert + duplicate cycle
 Latest article query  ✅ 10 ordered records, bounded Telegram message
+LLM Mock + PostgreSQL ✅ atomic claim, stale recovery, delayed retry, permanent-error halt
+Gemini API             ❌ not run yet
 ```

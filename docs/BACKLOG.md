@@ -1,8 +1,8 @@
 # BACKLOG.md
 
 ## Now
-- **LLM Provider Abstraction** — Выбрать провайдера и реализовать подключаемый интерфейс
-- **Суммаризация и классификация важности** — LLM-промпты для суммаризации статьи и оценки важности
+- **Gemini runtime verification** — Проверить `gemini-2.5-flash-lite` на одной явно выбранной статье с реальным API key и оценить summary/importance/topics
+- **Stage 4 manual acceptance** — Подтвердить совместную работу Telegram polling, RSS collection и независимого LLM processor
 
 ## Next
 - **Ежедневный дайджест** — Генерация и доставка утреннего дайджеста (за последние 24ч)

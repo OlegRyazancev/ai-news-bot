@@ -7,33 +7,40 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum LlmProcessingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
 model User {
-  id            BigInt    @id @default(autoincrement())
-  telegramId    BigInt    @unique
+  id            BigInt           @id @default(autoincrement())
+  telegramId    BigInt           @unique
   username      String?
   firstName     String?
   lastName      String?
   languageCode  String?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  isActive      Boolean          @default(true)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
   preferences   UserPreferences?
   subscriptions Subscription[]
   digests       NewsDigest[]
 }
 
 model UserPreferences {
-  id              BigInt  @id @default(autoincrement())
-  userId          BigInt  @unique
-  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  receiveNews     Boolean @default(true)
-  receiveDigest   Boolean @default(false)
-  digestTime      String? // HH:MM format
-  timezone        String  @default("UTC")
-  minRelevance    Float   @default(0.5)
-  maxNewsPerDay   Int     @default(10)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id            BigInt   @id @default(autoincrement())
+  userId        BigInt   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  receiveNews   Boolean  @default(true)
+  receiveDigest Boolean  @default(false)
+  digestTime    String? // HH:MM format
+  timezone      String   @default("UTC")
+  minRelevance  Float    @default(0.5)
+  maxNewsPerDay Int      @default(10)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }
 
 model Subscription {
@@ -50,24 +57,40 @@ model Subscription {
 }
 
 model NewsArticle {
-  id          BigInt    @id @default(autoincrement())
-  title       String
-  summary     String?
-  content     String?
-  url         String    @unique
-  source      String
-  author      String?
-  publishedAt DateTime
-  imageUrl    String?
-  language    String    @default("en")
-  relevance   Float     @default(0.0)
-  topics      String[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                     BigInt              @id @default(autoincrement())
+  title                  String
+  summary                String?
+  content                String?
+  url                    String              @unique
+  source                 String
+  author                 String?
+  publishedAt            DateTime
+  imageUrl               String?
+  language               String              @default("en")
+  relevance              Float               @default(0.0)
+  topics                 String[]
+  llmSummary             String?
+  llmImportance          Float?
+  llmTopics              String[]            @default([])
+  llmStatus              LlmProcessingStatus @default(PENDING)
+  llmProvider            String?
+  llmModel               String?
+  llmAttemptCount        Int                 @default(0)
+  llmClaimToken          String?
+  llmProcessingStartedAt DateTime?
+  llmProcessedAt         DateTime?
+  llmNextRetryAt         DateTime?
+  llmLastError           String?
+  llmInputTokens         Int?
+  llmOutputTokens        Int?
+  llmTotalTokens         Int?
+  createdAt              DateTime            @default(now())
+  updatedAt              DateTime            @updatedAt
 
   @@index([publishedAt])
   @@index([source])
   @@index([relevance])
+  @@index([llmStatus, llmNextRetryAt])
 }
 
 model NewsDigest {
