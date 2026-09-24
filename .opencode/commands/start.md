@@ -1,39 +1,53 @@
 # /start Command
 
-## Instructions
+## Назначение
 
-Когда пользователь вызывает `/start`, выполни следующие шаги по порядку:
+Read-only восстановить общий контекст проекта, включая текущую branch/PR/CI позицию. Команда ориентирует, но не начинает и не реализует stage.
 
-1. **Read AGENTS.md** — Понять правила агента и workflow
-2. **Read docs/PROJECT.md** — Понять назначение приложения и функциональность
-3. **Read docs/ARCHITECTURE.md** — Понять техническую архитектуру
-4. **Read docs/CURRENT_STATE.md** — Понять текущее состояние проекта
-5. **Read docs/DECISIONS.md** — Понять архитектурные решения
-6. **Read docs/BACKLOG.md** — Понять текущие приоритеты
-7. **Run `git status`** — Проверить незакоммиченные изменения
-8. **Run `git log --oneline -10`** — Посмотреть последние коммиты (если есть)
-9. **Explore relevant code** — Посмотреть файлы, связанные с приоритетами BACKLOG
+## Workflow
+
+1. Прочитай `AGENTS.md` и `docs/DEVELOPMENT_WORKFLOW.md`.
+2. Прочитай `docs/PROJECT.md`, `docs/ARCHITECTURE.md`, `docs/CURRENT_STATE.md`, `docs/DECISIONS.md`, `docs/BACKLOG.md` и `docs/ROADMAP.md`.
+3. Прочитай checklist текущего stage, если он существует.
+4. Выполни read-only Git inspection:
+
+   ```bash
+   git branch --show-current
+   git status --short --branch
+   git log --oneline -10
+   ```
+
+5. Если текущая ветка не `main`, проверь связанный PR без изменений:
+
+   ```bash
+   gh pr view --json number,url,state,isDraft,baseRefName,headRefName
+   gh pr checks
+   ```
+
+6. Изучи только релевантный существующий код, необходимый для понимания ближайшей задачи.
+
+Если `gh` недоступен, нет авторизации или PR отсутствует, сообщи это без догадок. Non-zero `gh pr checks` разбери как возможный pending/failed status.
 
 ## Output Format
 
-После завершения вышеуказанного, дай краткую сводку:
-
-```
+```markdown
 ## Project Status Summary
 
-**Where the project is:** [фаза из CURRENT_STATE.md]
-
-**What works:** [список из CURRENT_STATE.md]
-
-**What was done last:** [последняя выполненная фича из CURRENT_STATE.md]
-
-**Unfinished work:** [в-процессе из CURRENT_STATE.md]
-
-**Recommended next step:** [следующий шаг из CURRENT_STATE.md или BACKLOG.md "Now" секции]
+**Where the project is:** <фаза и roadmap stage>
+**What works:** <подтверждённые результаты>
+**What was done last:** <последняя подтверждённая работа>
+**Current branch:** <branch + clean/dirty>
+**Pull request:** <URL + Draft/Ready/отсутствует/не применимо>
+**CI:** <success/pending/failed/not run/unknown>
+**Unfinished work:** <текущая точка>
+**Recommended next step:** <одно действие>
 ```
 
 ## Rules
 
-- Do NOT modify any files during `/start`
-- Do NOT run build or tests unless explicitly asked
-- Keep output concise — это ориентация, не реализация
+- Не изменяй файлы, Git, PR или CI.
+- Не выполняй pull, switch, commit, push, создание/редактирование PR или merge.
+- Не запускай build/tests/runtime verification без отдельного запроса.
+- `main` считай каноническим; незамерженные результаты stage-ветки не описывай как уже находящиеся в `main`.
+- Для начала нового stage рекомендуй `/stage-start`; для детального read-only статуса — `/stage-status`.
+- Ответ должен быть кратким.

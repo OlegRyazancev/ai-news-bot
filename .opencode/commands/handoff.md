@@ -1,86 +1,96 @@
 # /handoff Command
 
-## Instructions
+## Назначение
 
-Когда пользователь вызывает `/handoff`, выполни следующие шаги:
+Оставить следующей сессии проверяемый контекст текущей рабочей ветки и PR. `/handoff` не заменяет `/stage-close` и никогда не выполняет merge.
 
-### 1. Examine Current Changes
+## Workflow
+
+### 1. Проверить Git-контекст
+
 ```bash
-git status
-git diff                      # Все незакоммиченные изменения
-git diff --staged             # Застейдженные изменения
+git branch --show-current
+git status --short --branch
+git diff
+git diff --staged
 ```
 
-### 2. Review Session Work
-- Какие фичи реализованы?
-- Какие баги исправлены?
-- Какие файлы созданы/изменены/удалёны?
+- Зафиксируй текущую ветку, staged/unstaged/untracked изменения и их назначение.
+- Не discard, reset, stash и не перезаписывай пользовательские изменения.
+- Если изменения stage/application находятся на `main`, не commit/push: остановись и сообщи о нарушении workflow.
 
-### 3. Run Verification
+### 2. Проверить работу сессии
+
+- Что реализовано, исправлено или документировано?
+- Что подтверждено, а что ещё не verified?
+- Какие файлы изменены и нет ли постороннего scope?
+- Где остановился stage checklist?
+
+### 3. Выполнить применимую verification
+
+Для изменения application code как минимум:
+
 ```bash
-npm run build                 # Must pass
-npm run lint                  # Must pass
-# npm run test                # Если тесты есть
+npm run lint
+npm run build
+npm run test   # если тесты существуют или применимы
 ```
 
-### 4. Update docs/CURRENT_STATE.md
-Обнови эти поля на основе работы сессии:
-- **Current Phase** — Если изменилась
-- **What Works** — Добави вновь работающие фичи
-- **Implemented Functions** — Обнови таблицу статусов
-- **In Progress** — Обнови текущую работу
-- **Known Issues** — Добавь/убери проблемы
-- **Last Completed Feature** — Обнови до последней
-- **Next Recommended Step** — Обнови на основе прогресса
-- **Last Successful Commands** — Добавь результаты build/lint
+Выполни доступную обязательную runtime-проверку, если она относится к текущей работе. Не объявляй runtime working только по build.
 
-### 5. Update docs/BACKLOG.md
-- Перенеси выполненные из "Now" → "Next" или удали
-- Добавь новые пункты, открытые в процессе работы
-- Переприоритезируй если нужно
+### 4. Актуализировать только необходимую документацию
 
-### 6. Update docs/ARCHITECTURE.md (ТОЛЬКО если архитектура реально изменилась)
-- Новые компоненты добавлены
-- Новые зависимости добавлены
-- Изменились data flows
-- Новые внешние интеграции
+- `CURRENT_STATE.md` и `BACKLOG.md` обновляй только при фактическом изменении состояния/приоритетов.
+- `ARCHITECTURE.md`, `DECISIONS.md`, `PROJECT.md` и `README.md` меняй только при соответствующих реальных изменениях.
+- Roadmap status не переключай: это делает `/stage-close` или отдельная явная команда закрытия.
+- Проверь применимые документы, checklist, operational instructions, локальные Markdown-ссылки и финальный diff; не заявляй полный аудит после spot-check.
 
-### 7. Update docs/DECISIONS.md (ТОЛЬКО если принято новое архитектурное решение)
-- Добавь строку в таблицу с Decision, Choice, Reason
-- Используй "Reason: not documented" если причина неизвестна
+### 5. Проверить PR и CI
 
-### 8. Verify Documentation Matches Code
-- Проверь `README.md`, `PROJECT.md`, `ARCHITECTURE.md`, `CURRENT_STATE.md`, `BACKLOG.md`, `DECISIONS.md`, roadmap и применимые checklist.
-- Таблицы команд, структура проекта, data flow и статусы интеграций актуальны?
-- Если менялись запуск или конфигурация, согласованы ли `.env.example`, Docker-конфигурация и package scripts?
-- Нет ли устаревших placeholders, названий этапов, статусов, количеств тестов/источников и operational instructions?
-- Разрешаются ли локальные Markdown-ссылки?
-- Проверен ли финальный `git diff` после документационных исправлений?
+Если текущая ветка не `main`, выполни read-only inspection:
 
-Не утверждай, что все файлы синхронизированы, если выполнен только spot-check. Назови проверенный охват и исключения. Generated files, зависимости и секретный `.env` в документационный аудит не входят.
+```bash
+gh pr list --head <current-branch> --state all --json number,url,state,isDraft,baseRefName,headRefName
+gh pr checks
+```
+
+Сообщи URL, Draft/Ready state и фактическое состояние CI. Перед любым последующим изменением PR убедись, что найден ровно один PR, он `OPEN`, head совпадает с текущей веткой, base равен `main` и он не был closed/merged. При несоответствии или неоднозначности останови PR-действия и не создавай дубликат.
+
+Если `gh` отсутствует, авторизация недействительна или GitHub недоступен, не объявляй CI успешным и не меняй PR. Сообщи конкретную причину и необходимое действие; не устанавливай и не перенастраивай инструменты без необходимости. Отсутствие PR до первого meaningful push допустимо; после meaningful push stage-ветки Draft PR должен существовать.
+
+### 6. Сохранить coherent progress
+
+Если работа образует осмысленный проверенный checkpoint, находится в разрешённой рабочей ветке и пользователь не запретил Git/GitHub actions для задачи, агент может:
+
+1. сделать содержательный commit;
+2. push текущей ветки без force;
+3. после первого meaningful push создать Draft PR только если проверка всех состояний подтвердила полное отсутствие PR для этой ветки: сформировать body по `.github/pull_request_template.md` во временном файле вне Git и выполнить без интерактивного редактора `gh pr create --draft --base main --head <current-branch> --title "<PR title>" --body-file <temporary-body-file>`;
+4. актуализировать body только у проверенного единственного `OPEN` PR с правильными head/base.
+
+Не создавай commit только для сокрытия незавершённого или сломанного состояния. Если checkpoint не готов либо действует ограничение пользователя, оставь изменения как есть и явно укажи uncommitted/unpushed status.
+
+`/handoff` не переводит stage PR в Ready for review вместо `/stage-close`, не закрывает и не merge-ит PR.
 
 ## Output Format
 
-```
+```markdown
 ## Handoff Complete
 
-**Session Summary:** [2-3 предложения о том, что сделано]
-
-**Files Changed:** [список ключевых файлов]
-
-**Verification:** npm run build ✅ / ❌, npm run lint ✅ / ❌
-
-**Updated Docs:** CURRENT_STATE.md, BACKLOG.md[, ARCHITECTURE.md, DECISIONS.md]
-
-**Documentation Audit:** [проверенный охват и исключения]
-
-**Next Agent Should:** [конкретный следующий шаг из обновлённого CURRENT_STATE.md]
+**Session Summary:** <2–3 предложения>
+**Branch:** <ветка>
+**Files Changed:** <ключевые файлы>
+**Verification:** <lint/build/tests/runtime факты>
+**Git State:** <clean/dirty, committed/uncommitted, pushed/unpushed>
+**Pull Request:** <URL + Draft/Ready/отсутствует/недоступно>
+**CI:** <success/pending/failed/not run/unknown>
+**Documentation Audit:** <охват и исключения>
+**Where Stopped:** <точная точка>
+**Next Agent Should:** <одно конкретное действие>
 ```
 
 ## Rules
 
-- Do NOT commit changes (user decides when to commit)
-- Do NOT push to remote
-- Do NOT save conversation history or reasoning
-- Only update docs — preserve code changes as-is
-- Keep docs/CURRENT_STATE.md concise (not a history log)
+- Никогда не commit/push в `main`, не force push и не обходи protection/ruleset.
+- Никогда не merge PR; не закрывай PR без явной команды пользователя.
+- Не сохраняй transcript или reasoning в документации.
+- Уважай более узкое ограничение пользователя, например «не делать commit/push/PR».
