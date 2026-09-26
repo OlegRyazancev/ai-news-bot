@@ -27,6 +27,8 @@
 | LLM Processing Reliability | Настраиваемый timeout, ограниченные retry и отдельная обработка HTTP 429 | Внешний API не должен бессрочно блокировать цикл; исчерпание retry фиксируется как неуспешная попытка без потери исходной статьи |
 | LLM Execution Model | Независимый embedded `node-cron` processor поверх PostgreSQL | LLM не вызывается из RSS collection handler и не блокирует polling/collection; существующей PostgreSQL достаточно, Kafka/Redis/отдельный сервис для single-instance проекта не требуются |
 | LLM Delivery Semantics | Идемпотентные DB writes без exactly-once гарантии внешнего API | Atomic `FOR UPDATE SKIP LOCKED` claim + claim token исключают одновременную запись одной статьи и отбрасывают stale results, но после неопределённого сетевого сбоя внешний запрос может повториться |
+| LLM Provider Budget | PostgreSQL-backed provider-wide state с UTC-дневным внутренним бюджетом и persisted `pausedUntil` | Атомарное reservation до реального API call учитывает retry/manual retry и переживает restart; транзакция не удерживается во время сети. Бюджет приложения не считается фактической квотой Google; MockProvider его не расходует. `model` хранит модель последнего reservation для диагностики, но budget/pause keyed по provider |
+| LLM 429 Semantics | Остановить текущий batch и поставить весь provider на persisted pause минимум до `Retry-After` | Другие статьи не усугубляют quota exhaustion; provider `Retry-After` не ограничивается локальным `retryMaxDelay`, поэтому ранний повтор исключён |
 
 ## Решения по модели данных
 
@@ -39,6 +41,7 @@
 | Articles | URL @unique, indexed | не задокументировано |
 | Повторная статья | Insert-only по точному нормализованному URL | Повторный сбор пропускает уже сохранённый URL и не перезаписывает исходные или будущие LLM-обогащённые поля; уникальность гарантируется PostgreSQL |
 | LLM-обогащение статьи | Dedicated fields в `NewsArticle`, persist-first | Исходные RSS `summary` и `topics` сохраняются без изменений, существующее `relevance` не переиспользуется как importance. LLM summary, importance и topics хранятся отдельно вместе со status, provider, model, временными метками, безопасной диагностикой попыток и token usage; после сохранения обрабатываются новые и ранее не обработанные записи с возможностью retry/backfill |
+| Метаданные LLM reprocess | Success metadata отделены от attempt metadata | `llmProvider`, `llmModel`, `llmProcessedAt` и token usage относятся к последнему успешному enrichment; `llmLastAttemptProvider`, `llmLastAttemptModel`, `llmLastAttemptAt`, status/error — к последней попытке. Неуспешный reprocess сохраняет старый enrichment и его корректную атрибуцию |
 | Digests | Article ID array | не задокументировано |
 
 ## Недокументированные / Не решённые

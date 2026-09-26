@@ -4,12 +4,15 @@ import { LlmProcessingStatus, PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MockProvider } from '../src/llm/mock-provider';
 import { LlmProcessor } from '../src/llm/processor';
+import { PrismaLlmRequestQuota } from '../src/llm/quota';
 import { PrismaLlmArticleRepository } from '../src/llm/repository';
+import type { LlmProvider } from '../src/llm/types';
 
 describe('PrismaLlmArticleRepository integration', () => {
   const client = new PrismaClient();
   const repository = new PrismaLlmArticleRepository(client);
   const articleIds: bigint[] = [];
+  const quotaProviders: string[] = [];
 
   beforeAll(async () => {
     await client.$connect();
@@ -18,6 +21,9 @@ describe('PrismaLlmArticleRepository integration', () => {
   afterAll(async () => {
     if (articleIds.length > 0) {
       await client.newsArticle.deleteMany({ where: { id: { in: articleIds } } });
+    }
+    if (quotaProviders.length > 0) {
+      await client.llmProviderQuota.deleteMany({ where: { provider: { in: quotaProviders } } });
     }
     await client.$disconnect();
   });
@@ -39,8 +45,6 @@ describe('PrismaLlmArticleRepository integration', () => {
   }
 
   const options = (now: Date) => ({
-    provider: 'mock',
-    model: 'mock-v1',
     now,
     staleBefore: new Date(now.getTime() - 60_000),
     maxAttempts: 3,
@@ -64,18 +68,21 @@ describe('PrismaLlmArticleRepository integration', () => {
     const firstNow = new Date('2026-09-24T12:00:00.000Z');
     const oldClaim = await repository.claimNext({ ...options(firstNow), articleId: article.id });
     expect(oldClaim).not.toBeNull();
+    const oldAttempt = await repository.startAttempt(oldClaim!, 'mock', 'mock-v1', firstNow);
+    expect(oldAttempt?.llmAttemptCount).toBe(1);
 
     const recoveryNow = new Date('2026-09-24T12:02:00.000Z');
     const recovered = await repository.claimNext({
       ...options(recoveryNow),
       articleId: article.id,
     });
+    const recoveredAttempt = await repository.startAttempt(recovered!, 'mock', 'mock-v1', recoveryNow);
 
     expect(recovered?.claimToken).not.toBe(oldClaim?.claimToken);
-    expect(recovered?.llmAttemptCount).toBe(2);
+    expect(recoveredAttempt?.llmAttemptCount).toBe(2);
 
     const oldCompletion = await repository.complete(
-      oldClaim!,
+      oldAttempt!,
       {
         enrichment: { summary: 'Old', importance: 0.1, topics: ['old'] },
         usage: {},
@@ -83,7 +90,7 @@ describe('PrismaLlmArticleRepository integration', () => {
       recoveryNow
     );
     const currentCompletion = await repository.complete(
-      recovered!,
+      recoveredAttempt!,
       {
         enrichment: { summary: 'Current', importance: 0.9, topics: ['current'] },
         usage: { inputTokens: 10, outputTokens: 4, totalTokens: 14 },
@@ -120,9 +127,15 @@ describe('PrismaLlmArticleRepository integration', () => {
       ...options(new Date('2026-09-24T12:00:00.000Z')),
       articleId: article.id,
     });
+    const currentAttempt = await repository.startAttempt(
+      claim!,
+      'mock',
+      'mock-v1',
+      new Date('2026-09-24T12:00:00.000Z')
+    );
 
     await repository.complete(
-      claim!,
+      currentAttempt!,
       {
         enrichment: { summary: 'LLM summary', importance: 0.8, topics: ['llm-topic'] },
         usage: {},
@@ -158,7 +171,7 @@ describe('PrismaLlmArticleRepository integration', () => {
       }
     );
 
-    await expect(processor.processArticle(article.id, false)).resolves.toMatchObject({
+    await expect(processor.processArticle(article.id)).resolves.toMatchObject({
       claimedCount: 1,
       completedCount: 1,
     });
@@ -166,16 +179,20 @@ describe('PrismaLlmArticleRepository integration', () => {
       llmStatus: LlmProcessingStatus.COMPLETED,
       llmProvider: 'mock',
       llmModel: 'mock-v1',
+      llmLastAttemptProvider: 'mock',
+      llmLastAttemptModel: 'mock-v1',
       llmTopics: ['mock'],
       llmInputTokens: 10,
       llmOutputTokens: 5,
       llmTotalTokens: 15,
     });
 
-    await expect(processor.processArticle(article.id, false)).resolves.toMatchObject({
+    await expect(processor.processArticle(article.id)).resolves.toMatchObject({
       claimedCount: 0,
     });
-    await expect(processor.processArticle(article.id, true)).resolves.toMatchObject({
+    await expect(
+      processor.processArticle(article.id, { reprocessCompleted: true })
+    ).resolves.toMatchObject({
       claimedCount: 1,
       completedCount: 1,
     });
@@ -203,7 +220,7 @@ describe('PrismaLlmArticleRepository integration', () => {
       }
     );
 
-    await expect(processor.processArticle(article.id, false)).resolves.toMatchObject({
+    await expect(processor.processArticle(article.id)).resolves.toMatchObject({
       claimedCount: 1,
       failedCount: 1,
     });
@@ -214,7 +231,7 @@ describe('PrismaLlmArticleRepository integration', () => {
       llmAttemptCount: 1,
     });
 
-    await expect(processor.processArticle(article.id, false)).resolves.toMatchObject({
+    await expect(processor.processArticle(article.id)).resolves.toMatchObject({
       claimedCount: 0,
     });
   });
@@ -236,7 +253,7 @@ describe('PrismaLlmArticleRepository integration', () => {
       }
     );
 
-    await expect(processor.processArticle(article.id, false)).resolves.toMatchObject({
+    await expect(processor.processArticle(article.id)).resolves.toMatchObject({
       haltedErrorCode: 'AUTHENTICATION',
       failedCount: 1,
     });
@@ -249,6 +266,171 @@ describe('PrismaLlmArticleRepository integration', () => {
       llmLastError: 'AUTHENTICATION',
       llmNextRetryAt: null,
       llmAttemptCount: 1,
+    });
+  });
+
+  it('keeps last successful provider metadata when reprocessing fails with another model', async () => {
+    const article = await createArticle();
+    const firstNow = new Date('2026-09-24T16:00:00.000Z');
+    const successProcessor = new LlmProcessor(
+      repository,
+      new MockProvider('mock-success'),
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        now: () => firstNow,
+      }
+    );
+    await successProcessor.processArticle(article.id);
+
+    const failingProvider: LlmProvider = {
+      id: 'gemini',
+      model: 'gemini-new',
+      enrich: () => Promise.reject(new Error('provider failure')),
+    };
+    const failedNow = new Date('2026-09-24T16:05:00.000Z');
+    const failingProcessor = new LlmProcessor(
+      repository,
+      failingProvider,
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        now: () => failedNow,
+      }
+    );
+
+    await failingProcessor.processArticle(article.id, { reprocessCompleted: true });
+
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.FAILED,
+      llmSummary: expect.stringContaining('Mock summary'),
+      llmProvider: 'mock',
+      llmModel: 'mock-success',
+      llmProcessedAt: firstNow,
+      llmLastAttemptProvider: 'gemini',
+      llmLastAttemptModel: 'gemini-new',
+      llmLastAttemptAt: failedNow,
+    });
+  });
+
+  it('explicitly retries a permanent FAILED article without enabling automatic retries', async () => {
+    const article = await createArticle();
+    const failedAt = new Date('2026-09-24T17:00:00.000Z');
+    const failingProcessor = new LlmProcessor(
+      repository,
+      new MockProvider('mock-auth', 'permanent-error'),
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        now: () => failedAt,
+      }
+    );
+    await failingProcessor.processArticle(article.id);
+    await expect(failingProcessor.run('scheduled')).resolves.toMatchObject({ skipped: true });
+
+    const retryProcessor = new LlmProcessor(
+      repository,
+      new MockProvider('mock-fixed'),
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        now: () => new Date('2026-09-24T17:05:00.000Z'),
+      }
+    );
+
+    await expect(retryProcessor.run('scheduled')).resolves.toMatchObject({
+      claimedCount: 0,
+      completedCount: 0,
+    });
+
+    await expect(
+      retryProcessor.processArticle(article.id, { retryFailed: true })
+    ).resolves.toMatchObject({ completedCount: 1 });
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.COMPLETED,
+      llmProvider: 'mock',
+      llmModel: 'mock-fixed',
+      llmAttemptCount: 1,
+    });
+  });
+
+  it('atomically enforces the daily budget and resets it on the next UTC day', async () => {
+    const provider = `quota-${randomUUID()}`;
+    quotaProviders.push(provider);
+    const first = new PrismaLlmRequestQuota(client, provider, 'model-a', 1);
+    const restarted = new PrismaLlmRequestQuota(client, provider, 'model-a', 1);
+    const dayOne = new Date('2026-09-24T23:59:00.000Z');
+
+    const reservations = await Promise.all([first.reserve(dayOne), restarted.reserve(dayOne)]);
+    expect(reservations.filter(result => result.reserved)).toHaveLength(1);
+    expect(reservations.find(result => !result.reserved)).toMatchObject({
+      reserved: false,
+      reason: 'DAILY_LIMIT',
+      retryAt: new Date('2026-09-25T00:00:00.000Z'),
+    });
+
+    await expect(restarted.reserve(new Date('2026-09-25T00:00:00.000Z'))).resolves.toMatchObject({
+      reserved: true,
+      reservedRequests: 1,
+    });
+  });
+
+  it('persists a 429 pause across processor restart and restores after Retry-After', async () => {
+    const providerId = `gemini-${randomUUID()}`;
+    quotaProviders.push(providerId);
+    const article = await createArticle();
+    const limitedAt = new Date('2026-09-24T18:00:00.000Z');
+    const quota = new PrismaLlmRequestQuota(client, providerId, 'gemini-test', 10);
+    const provider: LlmProvider = {
+      id: providerId,
+      model: 'gemini-test',
+      enrich: () =>
+        Promise.reject({ status: 429, headers: { 'retry-after': '300' }, message: 'limited' }),
+    };
+    const limitedProcessor = new LlmProcessor(
+      repository,
+      provider,
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 2,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        requestQuota: quota,
+        now: () => limitedAt,
+      }
+    );
+
+    await expect(limitedProcessor.processArticle(article.id)).resolves.toMatchObject({
+      pauseReason: 'RATE_LIMITED',
+      pausedUntil: new Date('2026-09-24T18:05:00.000Z'),
+    });
+
+    const restartedQuota = new PrismaLlmRequestQuota(client, providerId, 'gemini-test', 10);
+    await expect(restartedQuota.reserve(new Date('2026-09-24T18:04:59.000Z'))).resolves.toMatchObject({
+      reserved: false,
+      reason: 'PROVIDER_PAUSE',
+    });
+    await expect(restartedQuota.reserve(new Date('2026-09-24T18:05:00.000Z'))).resolves.toMatchObject({
+      reserved: true,
+      reservedRequests: 2,
     });
   });
 });

@@ -3,10 +3,21 @@ import { createLlmProcessor } from '../llm/runtime';
 import { env } from '../utils/config';
 import { logger } from '../utils/logger';
 
-function parseArguments(arguments_: readonly string[]): { articleId: bigint; reprocess: boolean } {
+function parseArguments(arguments_: readonly string[]): {
+  articleId: bigint;
+  reprocessCompleted: boolean;
+  retryFailed: boolean;
+} {
   const [articleIdValue, ...flags] = arguments_;
-  if (!articleIdValue || flags.some(flag => flag !== '--reprocess')) {
-    throw new Error('Usage: npm run llm:process-article -- <article-id> [--reprocess]');
+  const allowedFlags = new Set(['--reprocess', '--retry-failed']);
+  if (
+    !articleIdValue ||
+    flags.some(flag => !allowedFlags.has(flag)) ||
+    (flags.includes('--reprocess') && flags.includes('--retry-failed'))
+  ) {
+    throw new Error(
+      'Usage: npm run llm:process-article -- <article-id> [--reprocess | --retry-failed]'
+    );
   }
 
   let articleId: bigint;
@@ -17,17 +28,21 @@ function parseArguments(arguments_: readonly string[]): { articleId: bigint; rep
   }
   if (articleId <= 0n) throw new Error('Article ID must be a positive integer');
 
-  return { articleId, reprocess: flags.includes('--reprocess') };
+  return {
+    articleId,
+    reprocessCompleted: flags.includes('--reprocess'),
+    retryFailed: flags.includes('--retry-failed'),
+  };
 }
 
 async function main(): Promise<void> {
-  const { articleId, reprocess } = parseArguments(process.argv.slice(2));
+  const { articleId, reprocessCompleted, retryFailed } = parseArguments(process.argv.slice(2));
   const processor = createLlmProcessor(env, prisma, logger);
-  const report = await processor.processArticle(articleId, reprocess);
+  const report = await processor.processArticle(articleId, { reprocessCompleted, retryFailed });
 
   if (report.claimedCount === 0) {
     throw new Error(
-      'Article was not eligible. Use an explicit article ID with --reprocess only when intentional.'
+      'Article was not eligible. Use --reprocess for COMPLETED or --retry-failed for FAILED only when intentional.'
     );
   }
   if (report.completedCount !== 1) {

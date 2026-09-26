@@ -9,7 +9,7 @@
 - **grammY** - Telegram Bot Framework
 - **rss-parser** + **node-cron** - Сбор RSS/Atom и планирование
 - **Google Gen AI SDK** - Provider-independent LLM enrichment с Gemini и Mock adapters
-- **Vitest** - Unit-тесты
+- **Vitest** - Unit- и PostgreSQL integration tests
 - **Docker Compose** - Оркестрация контейнеров
 
 ## Структура проекта
@@ -127,6 +127,7 @@ ai-news-bot/
 - **UserPreferences** - Настройки уведомлений на пользователя
 - **Subscription** - Тематические подписки пользователя
 - **NewsArticle** - Собранные статьи и отдельные LLM enrichment/processing-поля
+- **LlmProviderQuota** - Provider-wide дневной бюджет и глобальная пауза реального LLM
 - **NewsDigest** - История ежедневных дайджестов
 
 ## Автоматические сервисы
@@ -136,7 +137,9 @@ ai-news-bot/
 - Insert-only сохранение статей в PostgreSQL с пропуском повторных URL.
 - Независимый LLM processor: атомарно получает сохранённые статьи из PostgreSQL, не блокируя RSS collection и Telegram polling.
 - Mock provider для разработки и тестов; Gemini adapter реализован, но реальная API-проверка этапа 4 ещё ожидается.
-- Persisted retries с exponential backoff, `Retry-After`, stale claim recovery и ограничением попыток.
+- Persisted retries с exponential backoff, `Retry-After`, остановкой batch и provider-wide паузой после HTTP 429.
+- PostgreSQL-backed внутренний дневной бюджет запросов реального provider с UTC reset; MockProvider бюджет не расходует.
+- Метаданные последнего успешного enrichment отделены от provider/model последней попытки.
 - Агрегированная статистика сбора и persistence без вывода полного содержимого статей.
 
 ## Команды разработки
@@ -151,7 +154,7 @@ npm run db:studio    # Открыть Prisma Studio
 npm run lint         # Запуск ESLint
 npm run test         # Запуск тестов
 npm run test:integration # PostgreSQL integration tests (требуется актуальная локальная схема)
-npm run llm:process-article -- <id> [--reprocess] # Явная обработка одной статьи
+npm run llm:process-article -- <id> [--reprocess | --retry-failed] # Явная обработка одной статьи
 ```
 
 ## Переменные окружения
@@ -176,6 +179,7 @@ npm run llm:process-article -- <id> [--reprocess] # Явная обработк�
 | `LLM_PROCESSING_CRON` | Отдельное расписание enrichment | Нет (`*/2 * * * *`) |
 | `LLM_PROCESSING_RUN_ON_STARTUP` | Запуск processor при старте | Нет (`true`) |
 | `LLM_PROCESSING_BATCH_SIZE` | Максимум статей за цикл | Нет (`5`) |
+| `LLM_DAILY_REQUEST_LIMIT` | Внутренний provider-wide бюджет запросов на UTC-день; не квота Google | Нет (`20`) |
 | `LLM_REQUEST_TIMEOUT_MS` | Timeout одного provider request | Нет (`30000`) |
 | `LLM_MAX_ATTEMPTS` | Максимум внешних попыток на статью | Нет (`3`) |
 | `LLM_RETRY_BASE_DELAY_MS` | Начальная задержка exponential backoff | Нет (`60000`) |
@@ -196,8 +200,10 @@ npm run llm:process-article -- <id> [--reprocess] # Явная обработк�
    ```bash
    npm run llm:process-article -- <article-id>
    ```
-   Для намеренной повторной обработки только этой завершённой статьи добавь `--reprocess`.
+   Для намеренной повторной обработки только этой завершённой статьи добавь `--reprocess`. Для явного повтора `FAILED` после исправления auth/config используй `--retry-failed`; автоматический retry постоянных ошибок не включается.
 5. После проверки можно включить фоновый processor: `LLM_PROCESSING_ENABLED=true`.
+
+`llmProvider`, `llmModel`, `llmProcessedAt` и token usage описывают последний успешный enrichment. `llmLastAttemptProvider`, `llmLastAttemptModel`, `llmLastAttemptAt`, status и error описывают последнюю попытку. Поэтому неуспешный reprocess не приписывает старый результат новой модели.
 
 RSS title/summary/content считаются недоверенными данными. API key не включается в prompts, логи или test fixtures.
 

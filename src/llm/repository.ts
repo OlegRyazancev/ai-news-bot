@@ -12,16 +12,24 @@ export type ClaimedArticle = Pick<
   'id' | 'title' | 'source' | 'language' | 'summary' | 'content' | 'llmAttemptCount'
 > & {
   claimToken: string;
+  previousStatus: LlmProcessingStatus;
+  previousAttemptCount: number;
+  previousNextRetryAt: Date | null;
+  previousLastError: string | null;
+};
+
+export type AttemptedArticle = ClaimedArticle & {
+  attemptProvider: string;
+  attemptModel: string;
 };
 
 export interface ClaimOptions {
-  provider: string;
-  model: string;
   now: Date;
   staleBefore: Date;
   maxAttempts: number;
   articleId?: bigint;
   allowCompleted?: boolean;
+  allowFailed?: boolean;
 }
 
 export interface LlmFailureUpdate {
@@ -32,11 +40,25 @@ export interface LlmFailureUpdate {
 export interface LlmArticleRepository {
   expireExhaustedStale(staleBefore: Date, maxAttempts: number): Promise<number>;
   claimNext(options: ClaimOptions): Promise<ClaimedArticle | null>;
-  complete(claim: ClaimedArticle, result: LlmProviderResult, processedAt: Date): Promise<boolean>;
-  fail(claim: ClaimedArticle, failure: LlmFailureUpdate): Promise<boolean>;
+  startAttempt(
+    claim: ClaimedArticle,
+    provider: string,
+    model: string,
+    now: Date
+  ): Promise<AttemptedArticle | null>;
+  release(claim: ClaimedArticle, retryAt: Date): Promise<boolean>;
+  complete(
+    claim: AttemptedArticle,
+    result: LlmProviderResult,
+    processedAt: Date
+  ): Promise<boolean>;
+  fail(claim: AttemptedArticle, failure: LlmFailureUpdate): Promise<boolean>;
 }
 
-type CandidateRow = Pick<NewsArticle, 'id' | 'llmStatus'>;
+type CandidateRow = Pick<
+  NewsArticle,
+  'id' | 'llmStatus' | 'llmAttemptCount' | 'llmNextRetryAt' | 'llmLastError'
+>;
 
 export class PrismaLlmArticleRepository implements LlmArticleRepository {
   constructor(private readonly client: PrismaClient) {}
@@ -61,8 +83,8 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
   }
 
   async claimNext(options: ClaimOptions): Promise<ClaimedArticle | null> {
-    if (options.allowCompleted && options.articleId === undefined) {
-      throw new Error('allowCompleted requires an explicit articleId');
+    if ((options.allowCompleted || options.allowFailed) && options.articleId === undefined) {
+      throw new Error('Explicit retry flags require an articleId');
     }
 
     return this.client.$transaction(async transaction => {
@@ -73,9 +95,12 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
       const completedFilter = options.allowCompleted
         ? Prisma.sql`OR "llmStatus" = 'COMPLETED'`
         : Prisma.empty;
+      const failedFilter = options.allowFailed
+        ? Prisma.sql`OR "llmStatus" = 'FAILED'`
+        : Prisma.empty;
 
       const candidates = await transaction.$queryRaw<CandidateRow[]>(Prisma.sql`
-        SELECT "id", "llmStatus"
+        SELECT "id", "llmStatus", "llmAttemptCount", "llmNextRetryAt", "llmLastError"
         FROM "NewsArticle"
         WHERE (
           "llmStatus" = 'PENDING'
@@ -91,6 +116,7 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
             AND "llmAttemptCount" < ${options.maxAttempts}
           )
           ${completedFilter}
+          ${failedFilter}
         )
         ${targetFilter}
         ORDER BY "createdAt" ASC, "id" ASC
@@ -103,18 +129,16 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
 
       const claimToken = randomUUID();
       const resetAttempts =
-        options.allowCompleted && candidate.llmStatus === LlmProcessingStatus.COMPLETED;
+        (options.allowCompleted && candidate.llmStatus === LlmProcessingStatus.COMPLETED) ||
+        (options.allowFailed && candidate.llmStatus === LlmProcessingStatus.FAILED);
       const article = await transaction.newsArticle.update({
         where: { id: candidate.id },
         data: {
           llmStatus: LlmProcessingStatus.PROCESSING,
-          llmProvider: options.provider,
-          llmModel: options.model,
-          llmAttemptCount: resetAttempts ? 1 : { increment: 1 },
+          llmAttemptCount: resetAttempts ? 0 : candidate.llmAttemptCount,
           llmClaimToken: claimToken,
           llmProcessingStartedAt: options.now,
           llmNextRetryAt: null,
-          llmLastError: null,
         },
         select: {
           id: true,
@@ -127,12 +151,80 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
         },
       });
 
-      return { ...article, claimToken };
+      return {
+        ...article,
+        claimToken,
+        previousStatus: candidate.llmStatus,
+        previousAttemptCount: candidate.llmAttemptCount,
+        previousNextRetryAt: candidate.llmNextRetryAt,
+        previousLastError: candidate.llmLastError,
+      };
     });
   }
 
-  async complete(
+  async startAttempt(
     claim: ClaimedArticle,
+    provider: string,
+    model: string,
+    now: Date
+  ): Promise<AttemptedArticle | null> {
+    const updated = await this.client.newsArticle.updateMany({
+      where: {
+        id: claim.id,
+        llmStatus: LlmProcessingStatus.PROCESSING,
+        llmClaimToken: claim.claimToken,
+      },
+      data: {
+        llmAttemptCount: { increment: 1 },
+        llmLastAttemptProvider: provider,
+        llmLastAttemptModel: model,
+        llmLastAttemptAt: now,
+        llmLastError: null,
+      },
+    });
+
+    return updated.count === 1
+      ? {
+          ...claim,
+          llmAttemptCount: claim.llmAttemptCount + 1,
+          attemptProvider: provider,
+          attemptModel: model,
+        }
+      : null;
+  }
+
+  async release(claim: ClaimedArticle, retryAt: Date): Promise<boolean> {
+    const restoreCompleted = claim.previousStatus === LlmProcessingStatus.COMPLETED;
+    const restorePending = claim.previousStatus === LlmProcessingStatus.PENDING;
+    const updated = await this.client.newsArticle.updateMany({
+      where: {
+        id: claim.id,
+        llmStatus: LlmProcessingStatus.PROCESSING,
+        llmClaimToken: claim.claimToken,
+      },
+      data: {
+        llmStatus: restoreCompleted
+          ? LlmProcessingStatus.COMPLETED
+          : restorePending
+            ? LlmProcessingStatus.PENDING
+            : LlmProcessingStatus.FAILED,
+        llmAttemptCount: claim.previousAttemptCount,
+        llmClaimToken: null,
+        llmProcessingStartedAt: null,
+        llmNextRetryAt:
+          restoreCompleted || restorePending ? claim.previousNextRetryAt : retryAt,
+        llmLastError:
+          claim.previousStatus === LlmProcessingStatus.PROCESSING
+            ? 'CLAIM_RELEASED'
+            : claim.previousLastError,
+      },
+    });
+
+    return updated.count === 1;
+  }
+
+  async complete(
+    claim: AttemptedArticle,
     result: LlmProviderResult,
     processedAt: Date
   ): Promise<boolean> {
@@ -146,6 +238,8 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
         llmSummary: result.enrichment.summary,
         llmImportance: result.enrichment.importance,
         llmTopics: result.enrichment.topics,
+        llmProvider: claim.attemptProvider,
+        llmModel: claim.attemptModel,
         llmStatus: LlmProcessingStatus.COMPLETED,
         llmClaimToken: null,
         llmProcessingStartedAt: null,
@@ -161,7 +255,7 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
     return updated.count === 1;
   }
 
-  async fail(claim: ClaimedArticle, failure: LlmFailureUpdate): Promise<boolean> {
+  async fail(claim: AttemptedArticle, failure: LlmFailureUpdate): Promise<boolean> {
     const updated = await this.client.newsArticle.updateMany({
       where: {
         id: claim.id,

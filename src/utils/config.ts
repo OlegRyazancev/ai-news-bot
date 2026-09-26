@@ -42,6 +42,7 @@ const envSchema = z.object({
     .default('true')
     .transform(value => value === 'true'),
   LLM_PROCESSING_BATCH_SIZE: z.coerce.number().int().min(1).max(50).default(5),
+  LLM_DAILY_REQUEST_LIMIT: z.coerce.number().int().min(1).max(100000).default(20),
   LLM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(30000),
   LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   LLM_RETRY_BASE_DELAY_MS: z.coerce.number().int().min(1000).max(3600000).default(60000),

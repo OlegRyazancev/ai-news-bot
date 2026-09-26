@@ -14,7 +14,7 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED (35 unit + 6 PostgreSQL integration tests) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED (41 unit + 10 PostgreSQL integration tests; новые integration tests ожидают CI) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
@@ -25,7 +25,7 @@
 ```
 ai-news-bot/
 ├── prisma/
-│   └── schema.prisma          # Схема БД (5 моделей)
+│   └── schema.prisma          # Схема БД (6 моделей)
 ├── src/
 │   ├── bot/                   # Логика Telegram-бота
 │   │   ├── index.ts           # Фабрика бота, middleware, регистрация команд
@@ -72,6 +72,7 @@ src/index.ts
     └── LlmProcessingScheduler (independent cron)
         └── LlmProcessor
             ├── PrismaLlmArticleRepository → atomic claim / persisted retry
+            ├── PrismaLlmRequestQuota → daily budget / persisted provider pause
             └── LlmProvider
                 ├── MockProvider
                 └── GeminiProvider → @google/genai
@@ -85,6 +86,7 @@ src/index.ts
 | `UserPreferences` | Настройки уведомлений | `/start` CREATE IF MISSING (runtime-verified) |
 | `Subscription` | Тематические подписки пользователя | DEFINED (unused) |
 | `NewsArticle` | Собранные статьи + dedicated LLM enrichment/state metadata | INSERT-ONLY RSS + LLM SCHEMA APPLIED; MOCK/POSTGRESQL INTEGRATION-VERIFIED |
+| `LlmProviderQuota` | UTC-дневной внутренний бюджет и provider-wide pause | IMPLEMENTED; POSTGRESQL VERIFICATION PENDING FOR REVIEW FIXES |
 | `NewsDigest` | История ежедневных дайджестов | DEFINED (unused) |
 
 **Key Relations:** User 1:1 Preferences, User 1:N Subscriptions, User 1:N Digests, Digests хранят массив ID статей.
@@ -94,7 +96,7 @@ src/index.ts
 | Интеграция | Библиотека | Статус |
 |-------------|---------|--------|
 | Telegram Bot API | grammY | RUNTIME-VERIFIED (polling) |
-| PostgreSQL | Prisma Client | SCHEMA APPLIED; USER AND ARTICLE PERSISTENCE RUNTIME-VERIFIED |
+| PostgreSQL | Prisma Client | BASE SCHEMA RUNTIME-VERIFIED; REVIEW SCHEMA ADDITIONS PENDING CI |
 | LLM (суммаризация, классификация) | Provider-independent `LlmProvider`; `@google/genai` + Mock | IMPLEMENTED; MOCK/DB VERIFIED, GEMINI RUNTIME PENDING |
 | News Sources | Curated RSS mix (8 feeds) | RUNTIME-VERIFIED |
 | Scheduler | `node-cron` (embedded) | RUNTIME-VERIFIED |
@@ -107,6 +109,8 @@ src/index.ts
 - **Latest reads**: До 10 статей по `publishedAt DESC`, затем `id DESC`
 - **LLM claims**: PostgreSQL transaction с `FOR UPDATE SKIP LOCKED`, claim token и условными final writes
 - **LLM retries**: `FAILED` + persisted `llmNextRetryAt`, exponential backoff, bounded attempts и stale `PROCESSING` recovery
+- **LLM quota**: атомарное PostgreSQL reservation до реального API call, provider-wide UTC budget и persisted `pausedUntil`; транзакция не удерживается во время сети
+- **LLM metadata**: `llmProvider`/`llmModel` относятся к последнему успешному enrichment; `llmLastAttempt*` — к последней попытке
 - **Source preservation**: RSS `summary`/`topics` и `relevance` не перезаписываются LLM-результатами
 - **Migrations**: Не созданы
 - **Dev Logging**: Query/error/warn в development, только error в production
@@ -119,7 +123,7 @@ src/index.ts
 
 ## LLM Integration
 
-**IMPLEMENTED; GEMINI RUNTIME PENDING** — provider-independent `LlmProvider`, `GeminiProvider` через официальный `@google/genai` и `MockProvider`. Active provider/model задаются env. Gemini запрашивает structured JSON, результат повторно проверяется Zod; RSS помещается в явно недоверенную data boundary. Processor сохраняет dedicated summary/importance/topics, provider/model/status/attempt/timestamp/token metadata. Timeout, 429/`Retry-After`, временные и permanent auth/config errors классифицируются без вывода сырого ответа. Mock + PostgreSQL подтверждены автоматическими integration tests; реальный Gemini API ещё не запускался.
+**IMPLEMENTED; GEMINI RUNTIME PENDING** — provider-independent `LlmProvider`, `GeminiProvider` через официальный `@google/genai` и `MockProvider`. Active provider/model задаются env. Gemini запрашивает structured JSON, результат повторно проверяется Zod; RSS помещается в явно недоверенную data boundary. Processor сохраняет dedicated summary/importance/topics, раздельные metadata последнего успеха и попытки, bounded retry, provider-wide 429 pause и внутренний дневной бюджет. Permanent auth/config errors не повторяются автоматически, но конкретный `FAILED` ID можно безопасно запустить с `--retry-failed` после исправления конфигурации. Реальный Gemini API ещё не запускался.
 - Суммаризации статей
 - Классификации важности
 - Тематической категоризации
@@ -225,7 +229,7 @@ docker-compose logs -f bot
 | `npm run lint` | ESLint check |
 | `npm run test` | Vitest unit tests |
 | `npm run test:integration` | PostgreSQL integration tests |
-| `npm run llm:process-article -- <id> [--reprocess]` | Targeted LLM processing одной явно выбранной статьи |
+| `npm run llm:process-article -- <id> [--reprocess \| --retry-failed]` | Targeted processing: обычная eligible статья, reprocess `COMPLETED` или explicit retry `FAILED` |
 
 ## UNKNOWN / Undetermined
 

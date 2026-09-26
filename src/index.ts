@@ -41,7 +41,8 @@ async function main() {
   const llmProcessingScheduler = env.LLM_PROCESSING_ENABLED
     ? new LlmProcessingScheduler(
         createLlmProcessor(env, prisma, logger),
-        env.LLM_PROCESSING_CRON
+        env.LLM_PROCESSING_CRON,
+        logger
       )
     : null;
   let shuttingDown = false;
@@ -79,14 +80,19 @@ async function main() {
 
   try {
     if (llmProcessingScheduler) {
-      await llmProcessingScheduler.start(env.LLM_PROCESSING_RUN_ON_STARTUP);
-      logger.info('LLM processing scheduler started', {
-        cron: env.LLM_PROCESSING_CRON,
-        provider: env.LLM_PROVIDER,
-        model: env.LLM_PROVIDER === 'mock' ? 'mock-v1' : env.LLM_MODEL,
-        batchSize: env.LLM_PROCESSING_BATCH_SIZE,
-        runOnStartup: env.LLM_PROCESSING_RUN_ON_STARTUP,
-      });
+      const llmSchedulerStarted = await llmProcessingScheduler.start(
+        env.LLM_PROCESSING_RUN_ON_STARTUP
+      );
+      if (llmSchedulerStarted) {
+        logger.info('LLM processing scheduler started', {
+          cron: env.LLM_PROCESSING_CRON,
+          provider: env.LLM_PROVIDER,
+          model: env.LLM_PROVIDER === 'mock' ? 'mock-v1' : env.LLM_MODEL,
+          batchSize: env.LLM_PROCESSING_BATCH_SIZE,
+          dailyRequestLimit: env.LLM_DAILY_REQUEST_LIMIT,
+          runOnStartup: env.LLM_PROCESSING_RUN_ON_STARTUP,
+        });
+      }
     } else {
       logger.info('LLM processing is disabled');
     }

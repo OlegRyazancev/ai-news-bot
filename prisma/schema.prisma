@@ -75,6 +75,9 @@ model NewsArticle {
   llmStatus              LlmProcessingStatus @default(PENDING)
   llmProvider            String?
   llmModel               String?
+  llmLastAttemptProvider String?
+  llmLastAttemptModel    String?
+  llmLastAttemptAt       DateTime?
   llmAttemptCount        Int                 @default(0)
   llmClaimToken          String?
   llmProcessingStartedAt DateTime?
@@ -91,6 +94,15 @@ model NewsArticle {
   @@index([source])
   @@index([relevance])
   @@index([llmStatus, llmNextRetryAt])
+}
+
+model LlmProviderQuota {
+  provider         String   @id
+  model            String?
+  quotaDate        DateTime
+  reservedRequests Int      @default(0)
+  pausedUntil      DateTime?
+  updatedAt        DateTime @updatedAt
 }
 
 model NewsDigest {

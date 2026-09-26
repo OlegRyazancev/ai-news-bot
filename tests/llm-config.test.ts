@@ -14,6 +14,7 @@ describe('LLM environment configuration', () => {
       LLM_PROVIDER: 'mock',
       LLM_MODEL: 'gemini-2.5-flash-lite',
       LLM_MAX_ATTEMPTS: 3,
+      LLM_DAILY_REQUEST_LIMIT: 20,
     });
   });
 
@@ -45,5 +46,14 @@ describe('LLM environment configuration', () => {
         LLM_RETRY_MAX_DELAY_MS: '1000',
       })
     ).toThrow('LLM_RETRY_MAX_DELAY_MS must be greater than or equal to the base delay');
+  });
+
+  it('requires a positive internal daily request budget', () => {
+    expect(() =>
+      parseEnv({
+        ...baseEnv,
+        LLM_DAILY_REQUEST_LIMIT: '0',
+      })
+    ).toThrow();
   });
 });

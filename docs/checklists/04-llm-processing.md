@@ -80,14 +80,25 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Добавить unit-тесты контракта, config, mock, Gemini adapter, timeout/retry/429, scheduler и processor state transitions, а также PostgreSQL integration tests.
 - [x] Обновить README, `docs/ARCHITECTURE.md`, `docs/CURRENT_STATE.md`, `docs/BACKLOG.md`, `.env.example` и Docker-конфигурацию по фактической реализации.
 
+### Исправления по review перед Gemini runtime
+
+- [x] HTTP 429 останавливает текущий batch и сохраняет provider-wide `pausedUntil` в PostgreSQL.
+- [x] `Retry-After` имеет приоритет над локальным retry maximum и не допускает преждевременный retry.
+- [x] Добавлен атомарный внутренний дневной budget реального provider с UTC reset и восстановлением после restart; MockProvider quota не расходует.
+- [x] Repository, scheduler startup/scheduled execution и shutdown ошибки изолированы безопасным агрегированным логированием.
+- [x] Success metadata отделены от last-attempt metadata; неуспешный reprocess не меняет атрибуцию старого enrichment.
+- [x] Добавлен явный `--retry-failed` для конкретной `FAILED` статьи без автоматического повтора permanent errors.
+- [x] Добавлены unit tests для quota exhaustion, 429 batch stop, PostgreSQL failure isolation и manual retry.
+- [x] Добавлены PostgreSQL integration tests для atomic quota reservation, UTC reset, restart/pause recovery, metadata и explicit FAILED retry.
+
 ## 1. Что тестирует агент
 
 ### Build Verification
 
 - [x] `npm run build` проходит.
 - [x] `npm run lint` проходит.
-- [x] `npm run test` проходит: 35 unit tests.
-- [x] `npm run test:integration` проходит: 6 PostgreSQL integration tests.
+- [x] `npm run test` проходит: 41 unit tests.
+- [ ] `npm run test:integration`: suite расширен до 10 PostgreSQL integration tests; локальный запуск заблокирован недоступной PostgreSQL/Docker, требуется GitHub Actions CI.
 - [x] `npx prisma generate` проходит.
 - [x] `npx prisma validate` проходит.
 - [x] Docker image `ai-news-bot:stage4` собирается; `.dockerignore` исключает локальные secrets и dev artifacts.
@@ -96,12 +107,13 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 ### Runtime Verification
 
-- [x] Актуальная Prisma-схема применена к локальной PostgreSQL через согласованный для проекта `npx prisma db push`.
+- [ ] Review-версия Prisma-схемы применяется через `npx prisma db push`; локальный запуск заблокирован недоступной PostgreSQL/Docker, требуется GitHub Actions CI.
 - [x] С `MockProvider` реальная тестовая статья в PostgreSQL проходит persist-first pipeline до `COMPLETED`, а dedicated поля и metadata записываются без изменения RSS `summary`/`topics`/`relevance`.
 - [ ] Mock-сценарии invalid response, timeout, retryable/429 и non-retryable error приводят к ожидаемым retry/status/attempt metadata и не останавливают batch.
 - [x] Stale `PROCESSING` запись доступна для безопасного повторного запуска; результат старого claim token отклоняется.
 - [x] Два пересекающихся processor claims не получают одну статью; атомарность подтверждена PostgreSQL integration test.
 - [x] Mocked 429 переводит запись в отложенное состояние и не вызывает tight retry loop; `Retry-After` учитывается в допустимых границах.
+- [ ] PostgreSQL integration: persisted provider pause переживает restart, дневной budget резервируется атомарно и безопасно сбрасывается на следующем UTC-дне (ожидается CI).
 - [x] Mocked permanent auth/config error не получает автоматический retry и останавливает in-process worker до перезапуска.
 - [ ] С локальным `GEMINI_API_KEY` выполнен реальный запрос к стабильной `gemini-2.5-flash-lite`; structured output проходит Zod-валидацию.
 - [ ] Для реальной сохранённой статьи Gemini записывает осмысленные summary, importance и topics, provider/model, processed timestamp и доступные token counts.
@@ -128,7 +140,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
    npm run llm:process-article -- <article-id>
    ```
 
-   Для уже `COMPLETED` записи использовать `--reprocess` только при осознанной повторной проверке именно этого ID.
+    Для уже `COMPLETED` записи использовать `--reprocess` только при осознанной повторной проверке именно этого ID. Для `FAILED` после исправления auth/config использовать явный `--retry-failed`.
 
    - [ ] только выбранная статья отправлена в Gemini;
    - [ ] команда завершилась успешно без вывода API key, prompt, полного RSS content или raw response;
