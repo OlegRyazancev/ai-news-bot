@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / LLM Processing Planning** — Этап 3 завершён: persistence, insert-only дедупликация и `/latest` подтверждены автоматическими, runtime- и пользовательскими проверками. Следующий этап — LLM-обработка.
+**Pre-MVP / Stage 4 LLM Processing Complete** — Provider-independent pipeline, Gemini adapter, PostgreSQL processing reliability, quota/pause semantics и targeted CLI завершены. Реальная статья №11 успешно обработана `gemini-3.5-flash-lite`; для статьи №15 подтверждены `TIMEOUT`, persisted retry и pre-provider блокировка дневным лимитом. Следующий запланированный этап — 5. Ежедневный дайджест.
 
 ## Статус проверки
 
@@ -10,7 +10,7 @@
 | TypeScript Build             | ✅ Verified         | `npm run build` проходит                                                                        |
 | ESLint                       | ✅ Verified         | `npm run lint` проходит                                                                         |
 | Prisma Client Generation     | ✅ Verified         | `npx prisma generate` проходит                                                                  |
-| Database Connection          | ✅ Verified         | PostgreSQL запущен, `db push` выполнен, схема синхронизирована                                  |
+| Database Connection          | ✅ CI-Verified      | Base schema runtime-verified ранее; review schema успешно применена к PostgreSQL service в GitHub Actions |
 | Database Migrations          | ❌ Not Created      | `prisma migrate` не запускался (использовался `db push`)                                        |
 | Bot Startup (polling)        | ✅ Runtime-Verified | `npm run dev` дошёл до polling; авторизация Telegram API через `getMe` успешна                  |
 | Telegram Commands            | ✅ Runtime-Verified | `/start`, `/help`, `/settings`, `/latest`, fallback и повторный запуск проверены пользователем  |
@@ -20,13 +20,16 @@
 | Collection Scheduler         | ✅ Runtime-Verified | Startup и cron-циклы проверены вместе с Telegram polling; graceful shutdown подтверждён         |
 | Article Persistence          | ✅ Runtime-Verified | Реальный batch создал записи в PostgreSQL; повторные URL пропущены без изменения данных         |
 | `/latest` with Database Data | ✅ Runtime-Verified | Реальные статьи, ссылки, порядок и очистка Markdown-маркеров проверены пользователем в Telegram |
-| Docker Build                 | ❌ Not Tested       | Docker Engine работает, образ бота не собирался                                                 |
-| Tests                        | ✅ Verified         | 5 test files, 18 unit tests проходят                                                            |
+| Docker Build                 | ✅ Build-Verified   | `ai-news-bot:stage4` собран; runtime контейнеров с реальными интеграциями ещё не проверен        |
+| LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
+| LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
+| Gemini API                   | ✅ Runtime-Verified | Статья №11 успешно обработана `gemini-3.5-flash-lite`; structured result и persistence подтверждены пользователем |
+| Tests                        | ✅ CI-Verified      | 58 unit и 19 PostgreSQL integration tests проходят локально и в GitHub Actions |
 
 ## Реализовано (Код есть, Build-Verified)
 
 - Скелет проекта (TypeScript, ESLint, конфиги)
-- Prisma схема: 5 моделей (User, UserPreferences, Subscription, NewsArticle, NewsDigest)
+- Prisma схема: 6 моделей (User, UserPreferences, Subscription, NewsArticle, LlmProviderQuota, NewsDigest)
 - Валидация окружения (Zod) с кэшированным конфигом
 - Логгер (уровневый консольный вывод)
 - Фабрика бота с session + conversations middleware
@@ -43,11 +46,27 @@
 - `/latest` на 10 последних статьях PostgreSQL с HTML-экранированием и ограничением размера сообщения
 - Очистка внешних заголовков от обрамляющих Markdown-маркеров при нормализации и отображении
 - Unit-тесты persistence, повторов, latest query, форматирования и recovery после ошибки handler
+- Provider-independent `LlmProvider`, `GeminiProvider` на `@google/genai` 2.24.0 и `MockProvider`
+- Structured JSON contract с повторной Zod-валидацией и недоверенной RSS data boundary
+- Dedicated LLM summary/importance/topics без изменения RSS `summary`/`topics` и `relevance`
+- Раздельные success/attempt provider/model/timestamp/error/token metadata в `NewsArticle`
+- Независимый LLM scheduler, PostgreSQL atomic claim, claim token и stale `PROCESSING` recovery
+- Bounded attempts, persisted exponential backoff, `Retry-After` и in-process halt на permanent auth/config errors
+- Provider-wide persisted pause после HTTP 429 без ограничения `Retry-After` локальным retry maximum
+- Атомарный PostgreSQL-backed дневной бюджет реального provider с UTC reset и восстановлением после restart
+- Явный `--retry-failed` для конкретного ID после исправления permanent auth/config ошибки
+- Изоляция repository/startup/scheduled/shutdown ошибок LLM processor от основного процесса
+- Сохранение permanent/retryable FAILED policy при quota race между availability check и atomic reservation
+- Best-effort claim release после reserve/startAttempt exceptions без quota refund; при недоступной БД остаётся stale recovery
+- Безопасная Gemini-диагностика: `httpStatus`, allowlisted `providerStatus`/`diagnosticCode` без raw message, secrets, headers, request/response или prompt
+- Модель по умолчанию `gemini-3.5-flash-lite`; stable model ID, structured outputs и используемый JSON Schema subset подтверждены официальной документацией
+- MockProvider acceptance matrix: missing key, configuration recovery, provider unavailable, RSS preservation и targeted isolation
+- Targeted processing одной явной статьи через `npm run llm:process-article`
+- Безопасная targeted CLI-диагностика для `ARTICLE_NOT_ELIGIBLE`, `DAILY_LIMIT`, `PROVIDER_PAUSED`, overlap, infrastructure и claim failures
+- PostgreSQL integration tests и CI PostgreSQL service
 
-## Не реализовано (Схема есть, кода нет)
+## Не реализовано / не подтверждено
 
-- Оценка важности
-- LLM интеграция (суммаризация, классификация)
 - Генерация ежедневного дайджеста + шедулер
 - Детекция и доставка breaking news
 - Управление закреплённым сообщением-шпаргалкой
@@ -58,23 +77,26 @@
 - `SessionData` пуст — состояние сессии не используется
 - Conversations middleware загружен но не используется
 - Webhook mode не реализован
-- Нет интеграционных тестов Telegram и PostgreSQL
+- Нет автоматических интеграционных тестов Telegram
+- Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Этап 3 «Хранение и дедупликация» завершён после успешной ручной перепроверки исправленного `/latest`.
+Stage 4 закрыт после успешных локальных проверок, runtime/manual acceptance, repository-wide документационного аудита и CI preliminary HEAD; финальный completion commit подтверждается обязательным CI перед Ready for review.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Выбрать LLM-провайдера для этапа 4
-2. Провести анализ и создать checklist этапа 4 «LLM-обработка»
-3. Спланировать суммаризацию, оценку важности и тематическую классификацию
+1. Выполнить ручной review и **Squash and merge** PR №3.
+2. После merge синхронизировать локальный `main` через безопасный fast-forward.
+3. Начать этап 5 командой `/stage-start` только от актуального `main`.
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
-npm run test      ✅ 18 tests
+npm run test      ✅ 58 unit tests
+npm run test:integration ✅ 19 PostgreSQL integration tests локально и в GitHub Actions
 npx prisma generate   ✅
-npx prisma db push    ✅
+npx prisma validate   ✅
+npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service
 npm run dev           ✅ polling startup
 Telegram API getMe    ✅
 Prisma SELECT 1       ✅
@@ -82,4 +104,6 @@ RSS/Atom collection   ✅ 8/8 sources
 node-cron collection  ✅ startup + scheduled cycles
 Article persistence   ✅ real PostgreSQL, insert + duplicate cycle
 Latest article query  ✅ 10 ordered records, bounded Telegram message
+LLM Mock + PostgreSQL ✅ atomic claim, stale recovery, delayed retry, permanent-error halt
+Gemini API             ✅ article #11 via gemini-3.5-flash-lite
 ```

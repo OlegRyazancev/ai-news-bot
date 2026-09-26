@@ -14,24 +14,27 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED (18 unit tests) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED; CI-VERIFIED (58 unit + 19 PostgreSQL integration tests) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
+| LLM SDK | `@google/genai` | 2.24.0 (exact pin; Node.js 20 compatible) | IMPLEMENTED; GEMINI RUNTIME-VERIFIED |
 
 ## Структура проекта
 
 ```
 ai-news-bot/
 ├── prisma/
-│   └── schema.prisma          # Схема БД (5 моделей)
+│   └── schema.prisma          # Схема БД (6 моделей)
 ├── src/
 │   ├── bot/                   # Логика Telegram-бота
 │   │   ├── index.ts           # Фабрика бота, middleware, регистрация команд
 │   │   └── commands.ts        # Обработчики команд (/start, /help, /settings, /latest)
 │   ├── db/
 │   │   └── client.ts          # PrismaClient singleton с dev-логированием
+│   ├── llm/                    # Provider contract, Gemini/Mock, DB repository, processor и scheduler
 │   ├── news/                   # Сбор, нормализация, persistence, latest formatting и scheduler
+│   ├── scripts/                # Targeted обработка одной статьи
 │   ├── utils/
 │   │   ├── config.ts          # Zod-валидированная конфигурация окружения (кэшированная)
 │   │   └── logger.ts          # Уровневый консольный логгер
@@ -65,6 +68,14 @@ src/index.ts
             └── NewsArticleStore → Prisma Client → PostgreSQL
 src/bot/commands.ts
     └── /latest → NewsArticleStore → Prisma Client → PostgreSQL
+src/index.ts
+    └── LlmProcessingScheduler (independent cron)
+        └── LlmProcessor
+            ├── PrismaLlmArticleRepository → atomic claim / persisted retry
+            ├── PrismaLlmRequestQuota → daily budget / persisted provider pause
+            └── LlmProvider
+                ├── MockProvider
+                └── GeminiProvider → @google/genai
 ```
 
 ## Схема БД (Prisma)
@@ -74,7 +85,8 @@ src/bot/commands.ts
 | `User` | Профиль пользователя Telegram | `/start` UPSERT (runtime-verified) |
 | `UserPreferences` | Настройки уведомлений | `/start` CREATE IF MISSING (runtime-verified) |
 | `Subscription` | Тематические подписки пользователя | DEFINED (unused) |
-| `NewsArticle` | Собранные новостные статьи | INSERT-ONLY PERSISTENCE; RUNTIME-VERIFIED |
+| `NewsArticle` | Собранные статьи + dedicated LLM enrichment/state metadata | INSERT-ONLY RSS + LLM SCHEMA APPLIED; MOCK/POSTGRESQL INTEGRATION-VERIFIED |
+| `LlmProviderQuota` | UTC-дневной внутренний бюджет и provider-wide pause | IMPLEMENTED; POSTGRESQL INTEGRATION-VERIFIED |
 | `NewsDigest` | История ежедневных дайджестов | DEFINED (unused) |
 
 **Key Relations:** User 1:1 Preferences, User 1:N Subscriptions, User 1:N Digests, Digests хранят массив ID статей.
@@ -84,8 +96,8 @@ src/bot/commands.ts
 | Интеграция | Библиотека | Статус |
 |-------------|---------|--------|
 | Telegram Bot API | grammY | RUNTIME-VERIFIED (polling) |
-| PostgreSQL | Prisma Client | SCHEMA APPLIED; USER AND ARTICLE PERSISTENCE RUNTIME-VERIFIED |
-| LLM (суммаризация, классификация) | — | PLANNED |
+| PostgreSQL | Prisma Client | BASE RUNTIME-VERIFIED; REVIEW SCHEMA ADDITIONS CI-VERIFIED |
+| LLM (суммаризация, классификация) | Provider-independent `LlmProvider`; `@google/genai` + Mock | IMPLEMENTED; GEMINI/MOCK/DB RUNTIME-VERIFIED |
 | News Sources | Curated RSS mix (8 feeds) | RUNTIME-VERIFIED |
 | Scheduler | `node-cron` (embedded) | RUNTIME-VERIFIED |
 
@@ -95,18 +107,27 @@ src/bot/commands.ts
 - **Connection**: `DATABASE_URL` env var (Zod принимает только `postgresql://` / `postgres://`)
 - **Article writes**: Batch `createMany` с `skipDuplicates` и уникальным `url`; повторные записи не обновляются
 - **Latest reads**: До 10 статей по `publishedAt DESC`, затем `id DESC`
+- **LLM claims**: PostgreSQL transaction с `FOR UPDATE SKIP LOCKED`, claim token и условными final writes
+- **LLM retries**: `FAILED` + persisted `llmNextRetryAt`, exponential backoff, bounded attempts и stale `PROCESSING` recovery
+- **LLM quota**: атомарное PostgreSQL reservation до реального API call, provider-wide UTC budget и persisted `pausedUntil`; транзакция не удерживается во время сети
+- **Claim release**: best-effort release по claim token восстанавливает previous status/attempt metadata/retry policy; permanent `FAILED` остаётся без auto-retry, а retryable `FAILED` учитывает максимум previous retry и provider pause
+- **Conservative budget**: подтверждённое или неоднозначное reservation не возвращается в дневной budget при последующей infrastructure error до API call
+- **LLM metadata**: `llmProvider`/`llmModel` относятся к последнему успешному enrichment; `llmLastAttempt*` — к последней попытке
+- **Source preservation**: RSS `summary`/`topics` и `relevance` не перезаписываются LLM-результатами
 - **Migrations**: Не созданы
 - **Dev Logging**: Query/error/warn в development, только error в production
 
 ## Фоновые задачи / Шедулеры
 
-**IMPLEMENTED FOR COLLECTION** — Встроенный `node-cron` запускает сбор по валидируемому cron-выражению (по умолчанию каждые 30 минут). Реализованы startup-run, защита от перекрытия и остановка scheduler. Будущие задачи:
+**IMPLEMENTED** — Два независимых встроенных `node-cron` scheduler: RSS collection (по умолчанию каждые 30 минут) и LLM processing (по умолчанию каждые 2 минуты, выключен конфигурацией). Медленный LLM cycle не ожидается collection handler или Telegram polling. Оба scheduler имеют local overlap guard; LLM дополнительно защищён DB claim. Будущие задачи:
 - Доставка ежедневного дайджеста
 - Мониторинг breaking news
 
 ## LLM Integration
 
-**PLANNED** — LLM-клиент не настроен. Требуется для:
+**IMPLEMENTED; GEMINI RUNTIME-VERIFIED** — provider-independent `LlmProvider`, `GeminiProvider` через официальный `@google/genai` и `MockProvider`. Active provider/model задаются env; модель по умолчанию — стабильная `gemini-3.5-flash-lite`. Статья №11 успешно прошла structured JSON, Zod validation и PostgreSQL persistence. Совместные polling, RSS collection, startup/scheduled LLM cycles, `/latest`, дневной budget и graceful shutdown подтверждены пользователем. Permanent auth/config errors не повторяются автоматически, но конкретный `FAILED` ID можно безопасно запустить с `--retry-failed` после исправления конфигурации.
+
+Gemini `ApiError` нормализуется без сохранения raw message: в лог разрешены только числовой `httpStatus`, allowlisted `providerStatus` и `diagnosticCode`. API key, headers, request, response, prompt и provider message не передаются в logger или PostgreSQL.
 - Суммаризации статей
 - Классификации важности
 - Тематической категоризации
@@ -153,6 +174,23 @@ node-cron → NewsCollectionRunner → NewsCollector → 8 RSS/Atom Sources
                    └── insert-only URL deduplication + aggregate statistics
 ```
 
+### Current (Stage 4 LLM Enrichment)
+```
+RSS/Atom collection → insert-only NewsArticle persistence
+                                      │
+                                      ▼
+                         Select pending/stale articles
+                                      │
+                                      ▼
+                  LlmProvider → GeminiProvider / MockProvider
+                                      │
+                                      ▼
+                     Structured JSON → Zod validation
+                                      │
+                                      ▼
+             Dedicated enrichment + processing/token metadata
+```
+
 ### Planned (Digest Delivery)
 ```
 Cron Scheduler → Fetch recent articles → LLM Digest Generation
@@ -194,10 +232,11 @@ docker-compose logs -f bot
 | `npm run db:studio` | Open Prisma Studio |
 | `npm run lint` | ESLint check |
 | `npm run test` | Vitest unit tests |
+| `npm run test:integration` | PostgreSQL integration tests |
+| `npm run llm:process-article -- <id> [--reprocess \| --retry-failed]` | Targeted processing: обычная eligible статья, reprocess `COMPLETED` или explicit retry `FAILED`; CLI различает eligibility, daily limit, provider pause и infrastructure/claim failures |
 
 ## UNKNOWN / Undetermined
 
-- LLM Provider (OpenAI, Anthropic, local, etc.)
 - Webhook deployment configuration
 - Production logging aggregation
 - Health check endpoints

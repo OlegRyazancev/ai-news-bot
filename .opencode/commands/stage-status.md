@@ -89,16 +89,18 @@ gh pr checks
 
 ## Формат ответа
 
+Язык пользовательского ответа определяется разделом **«Язык общения с пользователем»** в `AGENTS.md`.
+
 ```markdown
-# Stage Status
+# Статус этапа
 
 ## Текущий roadmap stage
 <номер>. <точное название>
 Статус: <точный статус>
 
 ## Git
-Branch: <ветка>
-Working tree: <clean / dirty + counts>
+Ветка: <ветка>
+Рабочее дерево: <clean / dirty + counts>
 
 ## Pull Request
 <N, URL, base/head, Draft/Ready/Open или «не применимо / отсутствует / недоступно»>
@@ -116,7 +118,7 @@ Working tree: <clean / dirty + counts>
 ## Блокеры
 <блокеры или «Нет.»>
 
-## Required decisions
+## Требуемые решения
 <решения или «Нет.»>
 
 ## Далее

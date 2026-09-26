@@ -1,5 +1,7 @@
 import { createBot } from './bot';
 import { prisma } from './db/client';
+import { createLlmProcessor } from './llm/runtime';
+import { LlmProcessingScheduler } from './llm/scheduler';
 import { NewsArticleStore } from './news/article-store';
 import { NewsCollector } from './news/collector';
 import { RssFeedReader } from './news/feed-reader';
@@ -36,6 +38,13 @@ async function main() {
     collectionRunner,
     env.NEWS_COLLECTION_CRON
   );
+  const llmProcessingScheduler = env.LLM_PROCESSING_ENABLED
+    ? new LlmProcessingScheduler(
+        createLlmProcessor(env, prisma, logger),
+        env.LLM_PROCESSING_CRON,
+        logger
+      )
+    : null;
   let shuttingDown = false;
 
   const shutdown = async (signal: 'SIGINT' | 'SIGTERM') => {
@@ -43,7 +52,7 @@ async function main() {
     shuttingDown = true;
 
     logger.info(`Received ${signal}, shutting down gracefully...`);
-    await collectionScheduler.stop();
+    await Promise.all([collectionScheduler.stop(), llmProcessingScheduler?.stop()]);
 
     if (bot.isRunning()) {
       await bot.stop();
@@ -70,6 +79,24 @@ async function main() {
   });
 
   try {
+    if (llmProcessingScheduler) {
+      const llmSchedulerStarted = await llmProcessingScheduler.start(
+        env.LLM_PROCESSING_RUN_ON_STARTUP
+      );
+      if (llmSchedulerStarted) {
+        logger.info('LLM processing scheduler started', {
+          cron: env.LLM_PROCESSING_CRON,
+          provider: env.LLM_PROVIDER,
+          model: env.LLM_PROVIDER === 'mock' ? 'mock-v1' : env.LLM_MODEL,
+          batchSize: env.LLM_PROCESSING_BATCH_SIZE,
+          dailyRequestLimit: env.LLM_DAILY_REQUEST_LIMIT,
+          runOnStartup: env.LLM_PROCESSING_RUN_ON_STARTUP,
+        });
+      }
+    } else {
+      logger.info('LLM processing is disabled');
+    }
+
     await collectionScheduler.start(env.NEWS_COLLECTION_RUN_ON_STARTUP);
     logger.info('News collection scheduler started', {
       cron: env.NEWS_COLLECTION_CRON,
@@ -83,7 +110,7 @@ async function main() {
       },
     });
   } finally {
-    await collectionScheduler.stop();
+    await Promise.all([collectionScheduler.stop(), llmProcessingScheduler?.stop()]);
     await prisma.$disconnect();
   }
 }

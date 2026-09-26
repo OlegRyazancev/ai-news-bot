@@ -109,24 +109,26 @@ npm run test   # если тесты существуют или требуют�
 
 Не выполняй merge и не закрывай PR. До пользовательского merge `main` остаётся каноническим; завершённый статус существует только в stage-ветке и становится каноническим после merge.
 
-## Stage Close Report
+## Итоговый отчёт
+
+Язык пользовательского отчёта определяется разделом **«Язык общения с пользователем»** в `AGENTS.md`.
 
 ```text
-Stage:
-Branch:
-Result:
-Build:
+Этап:
+Ветка:
+Результат:
+Сборка:
 Lint:
-Tests:
-Runtime verification:
-User manual verification:
+Тесты:
+Runtime-проверка:
+Ручная проверка пользователя:
 Checklist:
-Documentation audit:
+Аудит документации:
 Commit / push:
 PR:
-PR state:
-Preliminary HEAD CI:
-Final HEAD CI:
-Remaining issues:
-User action: review and Squash and merge / resolve listed blockers
+Состояние PR:
+CI предварительного HEAD:
+CI финального HEAD:
+Оставшиеся проблемы:
+Действие пользователя: выполнить review и Squash and merge / устранить перечисленные блокеры
 ```

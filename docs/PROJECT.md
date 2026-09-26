@@ -41,6 +41,8 @@
 - ✅ Runtime-Verified сбор и нормализация RSS/Atom из 8 согласованных AI/LLM-источников.
 - ✅ Runtime-Verified регулярный запуск через встроенный `node-cron` с защитой от перекрывающихся циклов.
 - ✅ Runtime-Verified insert-only сохранение собранных статей в PostgreSQL с дедупликацией по URL.
+- ✅ Integration-Verified независимая LLM-обработка сохранённых статей через MockProvider с atomic PostgreSQL claims, delayed retry, persisted quota/pause и безопасным manual retry.
+- ✅ Runtime-Verified Gemini adapter: статья №11 обработана `gemini-3.5-flash-lite`, structured results сохранены.
 
 ## Основные ограничения
 
@@ -52,11 +54,9 @@
 
 ## Что приложение ПОКА НЕ делает
 
-- ❌ Оценку/фильтрацию по важности
-- ❌ LLM-суммаризацию
 - ❌ Отправку запланированных дайджестов (нет шедулера)
 - ❌ Breaking news алерты
 - ❌ Закреплённое сообщение-шпаргалку
 - ❌ Управление подписками и предпочтениями (начальные настройки создаются, UI отложен)
-- ❌ Автоматические интеграционные тесты Telegram и PostgreSQL (unit-тесты сбора, persistence и форматирования реализованы)
+- ❌ Автоматические интеграционные тесты Telegram (PostgreSQL integration tests реализованы)
 - ❌ Rate limiting, webhook, админ-интерфейс
