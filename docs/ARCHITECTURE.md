@@ -14,7 +14,7 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED; CI-VERIFIED (49 unit + 12 PostgreSQL integration tests) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED (53 unit + 17 PostgreSQL integration tests verified locally; current CI pending) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
@@ -97,7 +97,7 @@ src/index.ts
 |-------------|---------|--------|
 | Telegram Bot API | grammY | RUNTIME-VERIFIED (polling) |
 | PostgreSQL | Prisma Client | BASE RUNTIME-VERIFIED; REVIEW SCHEMA ADDITIONS CI-VERIFIED |
-| LLM (суммаризация, классификация) | Provider-independent `LlmProvider`; `@google/genai` + Mock | IMPLEMENTED; MOCK/DB VERIFIED, GEMINI RUNTIME PENDING |
+| LLM (суммаризация, классификация) | Provider-independent `LlmProvider`; `@google/genai` + Mock | IMPLEMENTED; GEMINI/MOCK/DB RUNTIME-VERIFIED |
 | News Sources | Curated RSS mix (8 feeds) | RUNTIME-VERIFIED |
 | Scheduler | `node-cron` (embedded) | RUNTIME-VERIFIED |
 
@@ -125,7 +125,7 @@ src/index.ts
 
 ## LLM Integration
 
-**IMPLEMENTED; GEMINI SUCCESSFUL RUNTIME PENDING** — provider-independent `LlmProvider`, `GeminiProvider` через официальный `@google/genai` и `MockProvider`. Active provider/model задаются env; модель по умолчанию — стабильная `gemini-3.5-flash-lite`. Gemini запрашивает structured JSON через `responseJsonSchema`, результат повторно проверяется Zod; RSS помещается в явно недоверенную data boundary. Processor сохраняет dedicated summary/importance/topics, раздельные metadata последнего успеха и попытки, bounded retry, provider-wide 429 pause и внутренний дневной бюджет. Permanent auth/config errors не повторяются автоматически, но конкретный `FAILED` ID можно безопасно запустить с `--retry-failed` после исправления конфигурации. Неуспешная реальная попытка с прежней Gemini 2.5 выявила недостаток диагностики; успешная Gemini runtime-проверка ещё не выполнена.
+**IMPLEMENTED; GEMINI RUNTIME-VERIFIED** — provider-independent `LlmProvider`, `GeminiProvider` через официальный `@google/genai` и `MockProvider`. Active provider/model задаются env; модель по умолчанию — стабильная `gemini-3.5-flash-lite`. Статья №11 успешно прошла structured JSON, Zod validation и PostgreSQL persistence. Совместные polling, RSS collection, startup/scheduled LLM cycles, `/latest`, дневной budget и graceful shutdown подтверждены пользователем. Permanent auth/config errors не повторяются автоматически, но конкретный `FAILED` ID можно безопасно запустить с `--retry-failed` после исправления конфигурации.
 
 Gemini `ApiError` нормализуется без сохранения raw message: в лог разрешены только числовой `httpStatus`, allowlisted `providerStatus` и `diagnosticCode`. API key, headers, request, response, prompt и provider message не передаются в logger или PostgreSQL.
 - Суммаризации статей

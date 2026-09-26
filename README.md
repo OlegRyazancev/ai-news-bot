@@ -136,7 +136,7 @@ ai-news-bot/
 - Startup-run и регулярный запуск через `node-cron`.
 - Insert-only сохранение статей в PostgreSQL с пропуском повторных URL.
 - Независимый LLM processor: атомарно получает сохранённые статьи из PostgreSQL, не блокируя RSS collection и Telegram polling.
-- Mock provider для разработки и тестов; Gemini adapter реализован, но реальная API-проверка этапа 4 ещё ожидается.
+- Mock provider для разработки и тестов; Gemini adapter runtime-проверен на статье №11 с `gemini-3.5-flash-lite`.
 - Persisted retries с exponential backoff, `Retry-After`, остановкой batch и provider-wide паузой после HTTP 429.
 - PostgreSQL-backed внутренний дневной бюджет запросов реального provider с UTC reset; MockProvider бюджет не расходует.
 - Метаданные последнего успешного enrichment отделены от provider/model последней попытки.

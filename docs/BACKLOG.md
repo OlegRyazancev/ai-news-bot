@@ -1,8 +1,7 @@
 # BACKLOG.md
 
 ## Now
-- **Gemini runtime verification** — Проверить `gemini-3.5-flash-lite` на одной явно выбранной статье с реальным API key и оценить summary/importance/topics
-- **Stage 4 manual acceptance** — Подтвердить совместную работу Telegram polling, RSS collection и независимого LLM processor
+- **Stage 4 final manual acceptance** — Закрыть оставшиеся точечные ручные пункты checklist и затем отдельно выполнить `/stage-close`
 
 ## Next
 - **Ежедневный дайджест** — Генерация и доставка утреннего дайджеста (за последние 24ч)

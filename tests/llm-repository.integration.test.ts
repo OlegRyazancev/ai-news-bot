@@ -236,6 +236,45 @@ describe('PrismaLlmArticleRepository integration', () => {
     });
   });
 
+  it.each([
+    { behavior: 'invalid-response', errorCode: 'INVALID_RESPONSE' },
+    { behavior: 'timeout', errorCode: 'TIMEOUT' },
+    { behavior: 'temporary-error', errorCode: 'TEMPORARY' },
+  ] as const)(
+    'persists retry metadata for a mocked $errorCode provider failure',
+    async ({ behavior, errorCode }) => {
+      const article = await createArticle();
+      const fixedNow = new Date('2026-09-24T14:30:00.000Z');
+      const processor = new LlmProcessor(
+        repository,
+        new MockProvider(`mock-${behavior}`, behavior),
+        { info: () => undefined, warn: () => undefined, error: () => undefined },
+        {
+          batchSize: 1,
+          maxAttempts: 3,
+          retryBaseDelayMs: 1000,
+          retryMaxDelayMs: 60_000,
+          staleProcessingMs: 60_000,
+          now: () => fixedNow,
+        }
+      );
+
+      await expect(processor.processArticle(article.id)).resolves.toMatchObject({
+        claimedCount: 1,
+        failedCount: 1,
+      });
+      await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toMatchObject({
+        llmStatus: LlmProcessingStatus.FAILED,
+        llmLastError: errorCode,
+        llmNextRetryAt: new Date('2026-09-24T14:30:01.000Z'),
+        llmAttemptCount: 1,
+        llmLastAttemptProvider: 'mock',
+        llmLastAttemptModel: `mock-${behavior}`,
+        llmLastAttemptAt: fixedNow,
+      });
+    }
+  );
+
   it('halts the in-process worker after a permanent authentication error', async () => {
     const article = await createArticle();
     const fixedNow = new Date('2026-09-24T15:00:00.000Z');
@@ -370,6 +409,95 @@ describe('PrismaLlmArticleRepository integration', () => {
       llmModel: 'mock-fixed',
       llmAttemptCount: 1,
     });
+  });
+
+  it('recovers a permanent configuration failure only through an explicit retry', async () => {
+    const article = await createArticle();
+    const failedAt = new Date('2026-09-24T17:30:00.000Z');
+    const failingProcessor = new LlmProcessor(
+      repository,
+      new MockProvider('mock-bad-config', 'configuration-error'),
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        now: () => failedAt,
+      }
+    );
+
+    await expect(failingProcessor.processArticle(article.id)).resolves.toMatchObject({
+      failedCount: 1,
+      haltedErrorCode: 'CONFIGURATION',
+    });
+    await expect(failingProcessor.run('scheduled')).resolves.toMatchObject({
+      skipped: true,
+      haltedErrorCode: 'CONFIGURATION',
+    });
+
+    const recoveredAt = new Date('2026-09-24T17:35:00.000Z');
+    const recoveredProcessor = new LlmProcessor(
+      repository,
+      new MockProvider('mock-fixed-config'),
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        now: () => recoveredAt,
+      }
+    );
+
+    await expect(recoveredProcessor.processArticle(article.id)).resolves.toMatchObject({
+      claimedCount: 0,
+    });
+    await expect(
+      recoveredProcessor.processArticle(article.id, { retryFailed: true })
+    ).resolves.toMatchObject({ completedCount: 1 });
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.COMPLETED,
+      llmProvider: 'mock',
+      llmModel: 'mock-fixed-config',
+      llmLastError: null,
+      llmAttemptCount: 1,
+    });
+  });
+
+  it('targeted processing leaves every non-target article unchanged', async () => {
+    const target = await createArticle();
+    const untouched = await createArticle();
+    const untouchedBefore = await client.newsArticle.findUniqueOrThrow({
+      where: { id: untouched.id },
+    });
+    const processor = new LlmProcessor(
+      repository,
+      new MockProvider('mock-targeted'),
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 5,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        now: () => new Date('2026-09-24T17:45:00.000Z'),
+      }
+    );
+
+    await expect(processor.processArticle(target.id)).resolves.toMatchObject({
+      claimedCount: 1,
+      completedCount: 1,
+    });
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: target.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.COMPLETED,
+      llmModel: 'mock-targeted',
+    });
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: untouched.id } })).resolves.toEqual(
+      untouchedBefore
+    );
   });
 
   it('atomically enforces the daily budget and resets it on the next UTC day', async () => {

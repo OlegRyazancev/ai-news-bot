@@ -18,8 +18,8 @@
 ## Текущий фокус
 
 - **Текущий этап:** 4. LLM-обработка
-- **Подтверждено:** provider-independent pipeline, MockProvider и PostgreSQL state/retry/concurrency paths проверены автоматически; Gemini runtime ещё не подтверждён.
-- **Следующий крупный milestone:** выполнить успешную `gemini-3.5-flash-lite` обработку и ручную приёмку этапа 4.
+- **Подтверждено:** provider-independent pipeline и PostgreSQL reliability paths проверены автоматически; статья №11 успешно обработана `gemini-3.5-flash-lite`, совместная runtime-работа подтверждена пользователем.
+- **Следующий крупный milestone:** закрыть оставшиеся точечные ручные пункты и выполнить отдельный `/stage-close` для этапа 4.
 
 ## 0. Foundation / базовая инфраструктура
 

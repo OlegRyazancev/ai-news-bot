@@ -268,6 +268,41 @@ describe('LlmProcessor', () => {
     });
   });
 
+  it.each([
+    { behavior: 'invalid-response', errorCode: 'INVALID_RESPONSE' },
+    { behavior: 'timeout', errorCode: 'TIMEOUT' },
+    { behavior: 'temporary-error', errorCode: 'TEMPORARY' },
+  ] as const)(
+    'continues the batch after a retryable $errorCode provider failure',
+    async ({ behavior, errorCode }) => {
+      const first = claim(0, 42n);
+      const second = claim(0, 43n);
+      const store = repository(null);
+      store.claimNext = vi
+        .fn()
+        .mockResolvedValueOnce(first)
+        .mockResolvedValueOnce(second)
+        .mockResolvedValue(null);
+
+      const report = await processor(store, new MockProvider('mock-v1', behavior), {
+        batchSize: 2,
+      }).run('scheduled');
+
+      expect(report).toMatchObject({ claimedCount: 2, failedCount: 2 });
+      expect(store.fail).toHaveBeenCalledTimes(2);
+      expect(store.fail).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ id: first.id, llmAttemptCount: 1 }),
+        { code: errorCode, nextRetryAt: new Date('2026-09-24T12:00:01.000Z') }
+      );
+      expect(store.fail).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({ id: second.id, llmAttemptCount: 1 }),
+        { code: errorCode, nextRetryAt: new Date('2026-09-24T12:00:01.000Z') }
+      );
+    }
+  );
+
   it('stops automatic cycles after a permanent provider error but permits explicit failed retry', async () => {
     const article = claim();
     const store = repository(article);

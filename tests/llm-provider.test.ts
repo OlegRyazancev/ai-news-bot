@@ -51,6 +51,17 @@ describe('LLM provider contract', () => {
 
     expect(provider).toMatchObject({ id: 'mock', model: 'mock-v1' });
   });
+
+  it('rejects Gemini creation without an API key without making a provider request', () => {
+    expect(() =>
+      createLlmProvider({
+        LLM_PROVIDER: 'gemini',
+        LLM_MODEL: 'gemini-3.5-flash-lite',
+        GEMINI_API_KEY: undefined,
+        LLM_REQUEST_TIMEOUT_MS: 1000,
+      })
+    ).toThrow('GEMINI_API_KEY is required for GeminiProvider');
+  });
 });
 
 describe('GeminiProvider', () => {

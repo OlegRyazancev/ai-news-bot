@@ -42,7 +42,7 @@
 - ✅ Runtime-Verified регулярный запуск через встроенный `node-cron` с защитой от перекрывающихся циклов.
 - ✅ Runtime-Verified insert-only сохранение собранных статей в PostgreSQL с дедупликацией по URL.
 - ✅ Integration-Verified независимая LLM-обработка сохранённых статей через MockProvider с atomic PostgreSQL claims, delayed retry, persisted quota/pause и безопасным manual retry.
-- 🟡 Build-Verified Gemini adapter для summary, importance и topics; реальный Gemini API ещё не проверен.
+- ✅ Runtime-Verified Gemini adapter: статья №11 обработана `gemini-3.5-flash-lite`, structured results сохранены.
 
 ## Основные ограничения
 
@@ -54,7 +54,6 @@
 
 ## Что приложение ПОКА НЕ делает
 
-- 🟡 Не предоставляет runtime-подтверждённые Gemini summary/importance/topics до проверки с реальным API key
 - ❌ Отправку запланированных дайджестов (нет шедулера)
 - ❌ Breaking news алерты
 - ❌ Закреплённое сообщение-шпаргалку

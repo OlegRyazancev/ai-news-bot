@@ -113,8 +113,8 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 - [x] `npm run build` проходит.
 - [x] `npm run lint` проходит.
-- [x] `npm run test` проходит: 49 unit tests.
-- [x] `npm run test:integration` проходит локально и в GitHub Actions: 12 PostgreSQL integration tests.
+- [x] `npm run test` проходит: 53 unit tests.
+- [x] `npm run test:integration` проходит локально: 17 PostgreSQL integration tests; текущий CI ожидается.
 - [x] `npx prisma generate` проходит.
 - [x] `npx prisma validate` проходит.
 - [x] Docker image `ai-news-bot:stage4` собирается; `.dockerignore` исключает локальные secrets и dev artifacts.
@@ -123,30 +123,40 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 ### Runtime Verification
 
-- [x] Review-версия Prisma-схемы успешно применена через `npx prisma db push` к PostgreSQL service в GitHub Actions; локальный PostgreSQL/Docker недоступен.
+- [x] Review-версия Prisma-схемы успешно применена через `npx prisma db push` к PostgreSQL service в GitHub Actions; 17 integration tests также проходят на локальной PostgreSQL.
 - [x] С `MockProvider` реальная тестовая статья в PostgreSQL проходит persist-first pipeline до `COMPLETED`, а dedicated поля и metadata записываются без изменения RSS `summary`/`topics`/`relevance`.
-- [ ] Mock-сценарии invalid response, timeout, retryable/429 и non-retryable error приводят к ожидаемым retry/status/attempt metadata и не останавливают batch.
+- [x] Mock-сценарии invalid response, timeout и provider unavailable сохраняют ожидаемые retry/status/attempt metadata и не останавливают обычный batch; 429 и permanent errors следуют своим явно проверенным stop/pause semantics.
 - [x] Stale `PROCESSING` запись доступна для безопасного повторного запуска; результат старого claim token отклоняется.
 - [x] Два пересекающихся processor claims не получают одну статью; атомарность подтверждена PostgreSQL integration test.
 - [x] Mocked 429 переводит запись в отложенное состояние и не вызывает tight retry loop; `Retry-After` учитывается в допустимых границах.
-- [x] PostgreSQL integration: persisted provider pause переживает restart, дневной budget резервируется атомарно и безопасно сбрасывается на следующем UTC-дне.
+- [x] PostgreSQL integration и пользовательская runtime-проверка: persisted provider pause переживает restart, дневной budget резервируется атомарно и безопасно сбрасывается на следующем UTC-дне.
 - [x] PostgreSQL integration: quota race сохраняет permanent/retryable FAILED policy, а release проверяет claim token.
 - [x] Mocked permanent auth/config error не получает автоматический retry и останавливает in-process worker до перезапуска.
-- [ ] С локальным `GEMINI_API_KEY` выполнен успешный реальный запрос к стабильной `gemini-3.5-flash-lite`; structured output проходит Zod-валидацию.
-- [ ] Для реальной сохранённой статьи Gemini записывает осмысленные summary, importance и topics, provider/model, processed timestamp и доступные token counts.
+- [x] С локальным `GEMINI_API_KEY` выполнен успешный реальный запрос к стабильной `gemini-3.5-flash-lite`; статья №11 прошла structured output и Zod-валидацию до `COMPLETED`.
+- [x] Для реальной статьи №11 Gemini записала корректные dedicated LLM-результаты и metadata обработки.
 - [x] Повторный обычный цикл не claim-ит уже `COMPLETED` статью; explicit targeted reprocessing работает только для указанного ID.
-- [ ] Targeted Gemini runtime-проверка действует только на явно выбранную статью и не перезаписывает остальные завершённые записи.
+- [x] PostgreSQL integration test подтверждает, что targeted processing изменяет только явно указанный ID и оставляет другую статью полностью без изменений.
 - [x] Реальный 429 намеренно не создавался во избежание злоупотребления API; эквивалентный adapter + PostgreSQL path проверен через controlled MockProvider.
 - [x] Статический аудит логирования и Git diff подтверждает отсутствие Gemini API key, полного prompt, полного article content и сырого LLM-ответа.
-- [ ] Bot polling, collection, persistence и LLM processor фактически запускаются совместно; недоступность Gemini не ломает последующий scheduler cycle.
+- [x] Пользователь подтвердил совместные polling, RSS collection, startup/scheduled LLM cycles и `/latest`; автоматические scheduler/processor tests подтверждают изоляцию provider/infrastructure failures.
+
+### Автоматические доказательства финальных edge cases
+
+- [x] Отсутствующий Gemini API key отклоняется config/factory validation до создания provider request и без вывода значения секрета.
+- [x] Permanent `CONFIGURATION` не повторяется автоматически, а после исправления конфигурации explicit `--retry-failed` восстанавливает статью до `COMPLETED`.
+- [x] Недоступность provider (`TEMPORARY`/HTTP 503 через `MockProvider`) сохраняет delayed retry metadata и не останавливает обработку других статей batch.
+- [x] PostgreSQL completion сохраняет исходные RSS `summary`, `content`, `topics` и `relevance` без изменений.
+- [x] Targeted processing одной статьи не изменяет ни одно поле другой статьи.
 
 ## 2. Что пользователь тестирует вручную
 
 ### Подготовка
 
 - [x] Создать API key в Google AI Studio и сохранить только в локальном `.env` как `GEMINI_API_KEY`; не отправлять key в чат и не коммитить.
-- [ ] В Google AI Studio открыть rate limits выбранного project и убедиться, что `gemini-3.5-flash-lite` доступна; сообщить агенту только несекретные лимиты/ошибку доступности.
-- [ ] Убедиться, что PostgreSQL запущен, актуальная Prisma-схема применена, другой экземпляр бота остановлен, а в БД есть хотя бы одна содержательная статья.
+- [x] Успешный runtime вызов подтвердил доступность `gemini-3.5-flash-lite` для выбранного project.
+- [ ] В Google AI Studio отдельно проверить конкретные project RPM/TPM/RPD; внутренний дневной budget приложения не заменяет эту проверку.
+- [x] Успешная обработка статьи №11 подтвердила доступную PostgreSQL, актуальную схему и наличие содержательной статьи.
+- [ ] Перед повторной ручной проверкой убедиться, что не запущен другой экземпляр бота.
 - [ ] Установить `LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.5-flash-lite`, `LLM_PROCESSING_ENABLED=false` и небольшой batch size согласно обновлённой `.env.example`.
 
 ### Пошаговая проверка и ожидаемые результаты
@@ -161,39 +171,39 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
    - [ ] только выбранная статья отправлена в Gemini;
    - [ ] команда завершилась успешно без вывода API key, prompt, полного RSS content или raw response;
-   - [ ] выбранная статья получила status `COMPLETED`.
+   - [x] выбранная статья №11 получила status `COMPLETED`.
 2. Проверить обработанную запись через Prisma Studio без публикации полного контента:
    - [ ] RSS `summary` и `topics` сохранились без изменения;
    - [ ] `relevance` сохранился без изменения;
-   - [ ] dedicated LLM summary краткое и соответствует статье;
-   - [ ] importance находится в документированном диапазоне, topics содержат релевантные категории;
+   - [x] dedicated LLM summary краткое и соответствует статье;
+   - [x] importance находится в документированном диапазоне, topics содержат релевантные категории;
    - [ ] provider равен Gemini, model равна `gemini-3.5-flash-lite`, timestamp и token usage заполнены настолько, насколько их вернул API.
 3. Установить `LLM_PROCESSING_ENABLED=true`, подготовить ещё одну pending-статью и запустить `npm run dev`:
    - [ ] приложение доходит до polling без config/error stack с секретными значениями;
-   - [ ] лог показывает отдельные collection и LLM scheduler/processing events;
-   - [ ] `/latest` отвечает во время работы processor, а collection cycle не ожидает LLM handler;
+   - [x] лог показывает отдельные collection и startup/scheduled LLM scheduler/processing events;
+   - [x] `/latest` отвечает во время работы processor, а RSS collection работает параллельно;
    - [ ] ограниченный enrichment batch завершается, ошибка одной статьи не останавливает polling или следующий scheduler cycle.
 4. Перезапустить приложение с той же завершённой записью:
-   - [ ] `COMPLETED` статья не отправляется в Gemini повторно;
+   - [x] `COMPLETED` статья не отправляется в Gemini повторно;
    - [ ] приложение и `/latest` продолжают отвечать, исходная статья не повреждена.
 5. Удалить API key локально при `LLM_PROCESSING_ENABLED=true` и снова запустить приложение:
    - [ ] ошибка конфигурации/провайдера понятна, но не раскрывает key;
-   - [ ] после возврата корректного key и перезапуска eligible pending/failed статья может быть обработана согласно retry policy.
+   - [x] статья №11 восстановилась после прежней `CONFIGURATION` ошибки и explicit retry после исправления конфигурации; эквивалентный MockProvider test проверяет policy без внешнего API.
 6. Остановить приложение через `Ctrl+C`:
-   - [ ] shutdown завершается корректно, scheduler останавливается;
-   - [ ] сообщить агенту результат каждого пункта и только безопасные фрагменты ошибок.
+   - [x] shutdown через `Ctrl+C` завершается корректно, scheduler останавливается;
+   - [x] пользователь сообщил результаты без значений секретов.
 
 ## Acceptance
 
 - [x] Бизнес-логика использует `LlmProvider` и не импортирует `@google/genai` вне Gemini adapter.
 - [x] Конфигурация выбирает active provider и model; `GeminiProvider` и `MockProvider` создаются через factory.
-- [ ] Реальная сохранённая статья успешно обработана `gemini-3.5-flash-lite`, а structured result валидирован Zod.
+- [x] Реальная сохранённая статья №11 успешно обработана `gemini-3.5-flash-lite`, а structured result валидирован Zod.
 - [x] RSS-поля не перезаписываются; dedicated summary, importance, topics и processing/token metadata доступны последующим этапам.
 - [x] Timeout, ограниченные retries, HTTP 429 и ошибка отдельной статьи обработаны без бесконечного цикла и остановки pipeline.
 - [x] LLM processor архитектурно независим от collection/polling, атомарно claim-ит статьи и восстанавливает stale work без exactly-once обещаний для внешнего API.
-- [ ] Unit-, build- и применимые runtime-проверки выполнены.
+- [x] Unit-, build- и применимые runtime-проверки выполнены.
 - [ ] Пользователь выполнил ручной checklist и явно подтвердил результат.
-- [x] Документация синхронизирована с фактической реализацией после repository-wide аудита; незавершённый Gemini runtime gate отмечен явно.
+- [x] Документация синхронизирована с фактической реализацией после repository-wide аудита; оставшиеся ручные gates отмечены явно.
 - [ ] Все обязательные пункты checklist выполнены до закрытия этапа.
 
 ## Риски

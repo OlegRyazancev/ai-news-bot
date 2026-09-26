@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment и PostgreSQL-backed processor реализованы. После реального HTTP 400/404-class failure прежней Gemini 2.5 модель по умолчанию заменяется на стабильную `gemini-3.5-flash-lite`, а безопасная диагностика сохраняет только allowlisted metadata. Успешная Gemini runtime-проверка и ручная приёмка ещё не выполнены.
+**Pre-MVP / Stage 4 LLM Processing In Progress** — Реальная статья №11 успешно обработана `gemini-3.5-flash-lite`; результаты сохранены, повторный claim `COMPLETED` исключён. Совместные polling, RSS collection, startup/scheduled LLM cycles, `/latest`, дневной budget и graceful shutdown подтверждены пользователем. Остались только отдельные ручные checklist-пункты перед закрытием этапа.
 
 ## Статус проверки
 
@@ -23,8 +23,8 @@
 | Docker Build                 | ✅ Build-Verified   | `ai-news-bot:stage4` собран; runtime контейнеров с реальными интеграциями ещё не проверен        |
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
-| Gemini API                   | 🟡 Failure Observed | Targeted attempt с прежней Gemini 2.5 завершился `CONFIGURATION`; `gemini-3.5-flash-lite` ещё не запускалась |
-| Tests                        | ✅ Verified         | 49 unit и 12 PostgreSQL integration tests проходят локально и в GitHub Actions |
+| Gemini API                   | ✅ Runtime-Verified | Статья №11 успешно обработана `gemini-3.5-flash-lite`; structured result и persistence подтверждены пользователем |
+| Tests                        | 🟡 Pending CI       | 53 unit и 17 PostgreSQL integration tests проходят локально; текущий CI ожидается |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -60,13 +60,14 @@
 - Best-effort claim release после reserve/startAttempt exceptions без quota refund; при недоступной БД остаётся stale recovery
 - Безопасная Gemini-диагностика: `httpStatus`, allowlisted `providerStatus`/`diagnosticCode` без raw message, secrets, headers, request/response или prompt
 - Модель по умолчанию `gemini-3.5-flash-lite`; stable model ID, structured outputs и используемый JSON Schema subset подтверждены официальной документацией
+- MockProvider acceptance matrix: missing key, configuration recovery, provider unavailable, RSS preservation и targeted isolation
 - Targeted processing одной явной статьи через `npm run llm:process-article`
 - PostgreSQL integration tests и CI PostgreSQL service
 
 ## Не реализовано / не подтверждено
 
-- Реальная Gemini API обработка статьи и оценка качества enrichment
-- Ручная проверка независимой работы polling, collection и Gemini processor
+- Отдельное подтверждение Google AI Studio project RPM/TPM/RPD
+- Несколько точечных ручных пунктов безопасности/metadata из checklist Stage 4
 - Генерация ежедневного дайджеста + шедулер
 - Детекция и доставка breaking news
 - Управление закреплённым сообщением-шпаргалкой
@@ -81,19 +82,18 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Диагностирован неуспешный targeted Gemini 2.5 run: широкая категория `CONFIGURATION` скрывала HTTP 400/404. Безопасные allowlisted diagnostics и переход на `gemini-3.5-flash-lite` подтверждены CI.
+Успешная Gemini 3.5 обработка статьи №11 и совместная работа runtime подтверждены пользователем; финальные edge cases закрыты MockProvider/unit/PostgreSQL tests, текущий CI ожидается.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Проверить project-specific limits и доступность `gemini-3.5-flash-lite` в Google AI Studio
-2. Выполнить targeted runtime-проверку `gemini-3.5-flash-lite` на одной выбранной статье через явный `--retry-failed`
-3. Провести ручную приёмку polling/collection/processor
+1. Закрыть оставшиеся точечные ручные пункты checklist Stage 4
+2. После явного подтверждения пользователя выполнить отдельный `/stage-close`
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
-npm run test      ✅ 49 unit tests
-npm run test:integration ✅ 12 PostgreSQL integration tests локально и в GitHub Actions
+npm run test      ✅ 53 unit tests
+npm run test:integration ✅ 17 PostgreSQL integration tests локально; текущий CI ожидается
 npx prisma generate   ✅
 npx prisma validate   ✅
 npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service
@@ -105,5 +105,5 @@ node-cron collection  ✅ startup + scheduled cycles
 Article persistence   ✅ real PostgreSQL, insert + duplicate cycle
 Latest article query  ✅ 10 ordered records, bounded Telegram message
 LLM Mock + PostgreSQL ✅ atomic claim, stale recovery, delayed retry, permanent-error halt
-Gemini API             ❌ not run yet
+Gemini API             ✅ article #11 via gemini-3.5-flash-lite
 ```

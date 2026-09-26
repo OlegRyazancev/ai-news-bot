@@ -7,6 +7,7 @@ export type MockProviderBehavior =
   | 'timeout'
   | 'rate-limited'
   | 'temporary-error'
+  | 'configuration-error'
   | 'permanent-error';
 
 export class MockProvider implements LlmProvider {
@@ -26,7 +27,27 @@ export class MockProvider implements LlmProvider {
       case 'rate-limited':
         return Promise.reject(new LlmProviderError('RATE_LIMITED', true, 429, 60_000));
       case 'temporary-error':
-        return Promise.reject(new LlmProviderError('TEMPORARY', true, 503));
+        return Promise.reject(
+          new LlmProviderError(
+            'TEMPORARY',
+            true,
+            503,
+            undefined,
+            'UNAVAILABLE',
+            'PROVIDER_UNAVAILABLE'
+          )
+        );
+      case 'configuration-error':
+        return Promise.reject(
+          new LlmProviderError(
+            'CONFIGURATION',
+            false,
+            404,
+            undefined,
+            'NOT_FOUND',
+            'MODEL_NOT_FOUND_OR_UNSUPPORTED'
+          )
+        );
       case 'permanent-error':
         return Promise.reject(new LlmProviderError('AUTHENTICATION', false, 401));
       default:
