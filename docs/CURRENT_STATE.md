@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment, Gemini/Mock adapters и независимый PostgreSQL-backed processor реализованы. Persisted quota/pause, изоляция фоновых ошибок, корректная reprocess metadata и explicit FAILED retry подтверждены CI; реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
+**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment и PostgreSQL-backed processor реализованы. Дополнительное hardening сохраняет FAILED retry policy при quota race и best-effort освобождает claim после quota/startAttempt infrastructure errors; новые PostgreSQL regressions ожидают CI. Реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
 
 ## Статус проверки
 
@@ -24,7 +24,7 @@
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
 | Gemini API                   | ❌ Not Runtime-Verified | Реальный API key и `gemini-2.5-flash-lite` ещё не запускались                                 |
-| Tests                        | ✅ Verified         | 41 unit test проходит локально и в CI; 10 PostgreSQL integration tests проходят в GitHub Actions |
+| Tests                        | 🟡 Partial          | 45 unit tests проходят локально; suite расширен до 12 PostgreSQL integration tests и ожидает текущий CI |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -56,6 +56,8 @@
 - Атомарный PostgreSQL-backed дневной бюджет реального provider с UTC reset и восстановлением после restart
 - Явный `--retry-failed` для конкретного ID после исправления permanent auth/config ошибки
 - Изоляция repository/startup/scheduled/shutdown ошибок LLM processor от основного процесса
+- Сохранение permanent/retryable FAILED policy при quota race между availability check и atomic reservation
+- Best-effort claim release после reserve/startAttempt exceptions без quota refund; при недоступной БД остаётся stale recovery
 - Targeted processing одной явной статьи через `npm run llm:process-article`
 - PostgreSQL integration tests и CI PostgreSQL service
 
@@ -77,19 +79,19 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Исправлены и подтверждены CI четыре review-блока Stage 4: global 429/quota, фоновая изоляция, reprocess metadata и manual FAILED retry.
+Реализованы два дополнительных review edge case: корректное восстановление FAILED после quota race и best-effort release после reserve/startAttempt infrastructure errors; новый CI gate ожидается.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
-2. Выполнить targeted runtime-проверку `gemini-2.5-flash-lite` на одной выбранной статье
-3. Провести ручную приёмку polling/collection/processor
+1. Подтвердить 12 PostgreSQL integration tests в GitHub Actions CI
+2. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
+3. Выполнить targeted runtime-проверку и ручную приёмку Stage 4
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
-npm run test      ✅ 41 unit tests
-npm run test:integration ✅ 10 PostgreSQL integration tests в GitHub Actions
+npm run test      ✅ 45 unit tests
+npm run test:integration 🟡 12 tests реализованы; локальная PostgreSQL/Docker недоступна, ожидается CI
 npx prisma generate   ✅
 npx prisma validate   ✅
 npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service

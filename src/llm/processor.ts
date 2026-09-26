@@ -228,6 +228,7 @@ export class LlmProcessor {
       reservation = await this.requestQuota.reserve(reservationTime);
     } catch (error) {
       this.recordInfrastructureError(report, 'reserve-provider-quota', error, article.id);
+      await this.releaseAfterInfrastructureError(article, report, 'release-after-quota-error');
       return 'stop';
     }
 
@@ -258,6 +259,7 @@ export class LlmProcessor {
       );
     } catch (error) {
       this.recordInfrastructureError(report, 'start-attempt', error, article.id);
+      await this.releaseAfterInfrastructureError(article, report, 'release-after-attempt-error');
       return 'stop';
     }
     if (!attemptedArticle) {
@@ -391,6 +393,27 @@ export class LlmProcessor {
     this.localPausedUntil = until;
     report.pauseReason = reason;
     report.pausedUntil = until;
+  }
+
+  private async releaseAfterInfrastructureError(
+    article: ClaimedArticle,
+    report: LlmProcessingReport,
+    operation: string
+  ): Promise<void> {
+    const localDelay = Math.min(this.options.retryBaseDelayMs, this.options.retryMaxDelayMs);
+    const recoveryAt = new Date(this.now().getTime() + localDelay);
+    try {
+      const released = await this.repository.release(article, recoveryAt);
+      if (!released) {
+        report.lostClaimCount += 1;
+        this.logger.warn('LLM claim was already lost during infrastructure recovery', {
+          operation,
+          articleId: article.id.toString(),
+        });
+      }
+    } catch (error) {
+      this.recordInfrastructureError(report, operation, error, article.id);
+    }
   }
 
   private recordInfrastructureError(

@@ -23,6 +23,9 @@ function claim(attempt = 0, id = 42n): ClaimedArticle {
     previousAttemptCount: attempt,
     previousNextRetryAt: null,
     previousLastError: null,
+    previousLastAttemptProvider: null,
+    previousLastAttemptModel: null,
+    previousLastAttemptAt: null,
   };
 }
 
@@ -147,6 +150,109 @@ describe('LlmProcessor', () => {
     expect(store.release).not.toHaveBeenCalled();
     expect(store.startAttempt).not.toHaveBeenCalled();
     expect(enrich).not.toHaveBeenCalled();
+  });
+
+  it('releases a claimed article when the daily budget is exhausted between check and reserve', async () => {
+    const retryAt = new Date('2026-09-25T00:00:00.000Z');
+    const article: ClaimedArticle = {
+      ...claim(2),
+      previousStatus: LlmProcessingStatus.FAILED,
+      previousAttemptCount: 2,
+      previousLastError: 'AUTHENTICATION',
+    };
+    const store = repository(article);
+    const quota: LlmRequestQuota = {
+      check: vi.fn().mockResolvedValue({ available: true }),
+      reserve: vi.fn().mockResolvedValue({
+        reserved: false,
+        reason: 'DAILY_LIMIT',
+        retryAt,
+      }),
+      pauseUntil: vi.fn(),
+    };
+    const provider = new MockProvider();
+    const enrich = vi.spyOn(provider, 'enrich');
+
+    const report = await processor(store, provider, { requestQuota: quota }).run('scheduled');
+
+    expect(report).toMatchObject({ claimedCount: 1, pauseReason: 'DAILY_LIMIT' });
+    expect(quota.check).toHaveBeenCalledOnce();
+    expect(quota.reserve).toHaveBeenCalledOnce();
+    expect(store.release).toHaveBeenCalledWith(article, retryAt);
+    expect(store.startAttempt).not.toHaveBeenCalled();
+    expect(enrich).not.toHaveBeenCalled();
+  });
+
+  it('best-effort releases the claim when quota reservation throws', async () => {
+    const article = claim();
+    const store = repository(article);
+    const quota: LlmRequestQuota = {
+      check: vi.fn().mockResolvedValue({ available: true }),
+      reserve: vi.fn().mockRejectedValue(new Error('quota database unavailable')),
+      pauseUntil: vi.fn(),
+    };
+    const provider = new MockProvider();
+    const enrich = vi.spyOn(provider, 'enrich');
+
+    const report = await processor(store, provider, { requestQuota: quota }).run('scheduled');
+
+    expect(report.infrastructureError).toBe(true);
+    expect(store.release).toHaveBeenCalledWith(article, new Date('2026-09-24T12:00:01.000Z'));
+    expect(store.startAttempt).not.toHaveBeenCalled();
+    expect(enrich).not.toHaveBeenCalled();
+    expect(quota.pauseUntil).not.toHaveBeenCalled();
+  });
+
+  it('falls back to stale recovery when startAttempt and claim release both fail', async () => {
+    const article = claim();
+    const store = repository(article);
+    store.startAttempt = vi.fn().mockRejectedValue(new Error('attempt write unavailable'));
+    store.release = vi.fn().mockRejectedValue(new Error('release unavailable'));
+    const quota: LlmRequestQuota = {
+      check: vi.fn().mockResolvedValue({ available: true }),
+      reserve: vi.fn().mockResolvedValue({ reserved: true, reservedRequests: 1 }),
+      pauseUntil: vi.fn(),
+    };
+    const provider = new MockProvider();
+    const enrich = vi.spyOn(provider, 'enrich');
+    const testLogger = logger();
+
+    const report = await processor(
+      store,
+      provider,
+      { requestQuota: quota },
+      testLogger
+    ).run('scheduled');
+
+    expect(report.infrastructureError).toBe(true);
+    expect(store.release).toHaveBeenCalledWith(article, new Date('2026-09-24T12:00:01.000Z'));
+    expect(enrich).not.toHaveBeenCalled();
+    expect(quota.reserve).toHaveBeenCalledOnce();
+    expect(quota.pauseUntil).not.toHaveBeenCalled();
+    expect(testLogger.error).toHaveBeenCalledWith(
+      'LLM processing infrastructure operation failed',
+      expect.objectContaining({ operation: 'release-after-attempt-error' })
+    );
+  });
+
+  it('does not call the provider when the claim is lost before startAttempt completes', async () => {
+    const article = claim();
+    const store = repository(article);
+    store.startAttempt = vi.fn().mockResolvedValue(null);
+    const quota: LlmRequestQuota = {
+      check: vi.fn().mockResolvedValue({ available: true }),
+      reserve: vi.fn().mockResolvedValue({ reserved: true, reservedRequests: 1 }),
+      pauseUntil: vi.fn(),
+    };
+    const provider = new MockProvider();
+    const enrich = vi.spyOn(provider, 'enrich');
+
+    const report = await processor(store, provider, { requestQuota: quota }).run('scheduled');
+
+    expect(report).toMatchObject({ lostClaimCount: 1, completedCount: 0 });
+    expect(enrich).not.toHaveBeenCalled();
+    expect(store.release).not.toHaveBeenCalled();
+    expect(quota.reserve).toHaveBeenCalledOnce();
   });
 
   it('does not schedule another retry after the maximum attempt', async () => {

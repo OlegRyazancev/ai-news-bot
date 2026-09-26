@@ -14,7 +14,7 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED; CI-VERIFIED (41 unit + 10 PostgreSQL integration tests) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED (45 unit verified locally; 12 PostgreSQL integration tests pending review CI) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
@@ -110,6 +110,8 @@ src/index.ts
 - **LLM claims**: PostgreSQL transaction с `FOR UPDATE SKIP LOCKED`, claim token и условными final writes
 - **LLM retries**: `FAILED` + persisted `llmNextRetryAt`, exponential backoff, bounded attempts и stale `PROCESSING` recovery
 - **LLM quota**: атомарное PostgreSQL reservation до реального API call, provider-wide UTC budget и persisted `pausedUntil`; транзакция не удерживается во время сети
+- **Claim release**: best-effort release по claim token восстанавливает previous status/attempt metadata/retry policy; permanent `FAILED` остаётся без auto-retry, а retryable `FAILED` учитывает максимум previous retry и provider pause
+- **Conservative budget**: подтверждённое или неоднозначное reservation не возвращается в дневной budget при последующей infrastructure error до API call
 - **LLM metadata**: `llmProvider`/`llmModel` относятся к последнему успешному enrichment; `llmLastAttempt*` — к последней попытке
 - **Source preservation**: RSS `summary`/`topics` и `relevance` не перезаписываются LLM-результатами
 - **Migrations**: Не созданы

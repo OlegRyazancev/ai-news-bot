@@ -4,7 +4,7 @@ import { LlmProcessingStatus, PrismaClient } from '@prisma/client';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MockProvider } from '../src/llm/mock-provider';
 import { LlmProcessor } from '../src/llm/processor';
-import { PrismaLlmRequestQuota } from '../src/llm/quota';
+import { PrismaLlmRequestQuota, type LlmRequestQuota } from '../src/llm/quota';
 import { PrismaLlmArticleRepository } from '../src/llm/repository';
 import type { LlmProvider } from '../src/llm/types';
 
@@ -433,6 +433,136 @@ describe('PrismaLlmArticleRepository integration', () => {
     await expect(restartedQuota.reserve(new Date('2026-09-24T18:05:00.000Z'))).resolves.toMatchObject({
       reserved: true,
       reservedRequests: 2,
+    });
+  });
+
+  it('preserves permanent FAILED retry policy when quota is exhausted after availability check', async () => {
+    const providerId = `quota-race-${randomUUID()}`;
+    quotaProviders.push(providerId);
+    const article = await createArticle();
+    const previousAttemptAt = new Date('2026-09-24T18:30:00.000Z');
+    await client.newsArticle.update({
+      where: { id: article.id },
+      data: {
+        llmStatus: LlmProcessingStatus.FAILED,
+        llmAttemptCount: 2,
+        llmNextRetryAt: null,
+        llmLastError: 'AUTHENTICATION',
+        llmLastAttemptProvider: 'gemini',
+        llmLastAttemptModel: 'gemini-old',
+        llmLastAttemptAt: previousAttemptAt,
+      },
+    });
+
+    const now = new Date('2026-09-24T19:00:00.000Z');
+    const persistedQuota = new PrismaLlmRequestQuota(client, providerId, 'gemini-test', 1);
+    const racingQuota: LlmRequestQuota = {
+      check: currentTime => persistedQuota.check(currentTime),
+      reserve: async currentTime => {
+        await persistedQuota.reserve(currentTime);
+        return persistedQuota.reserve(currentTime);
+      },
+      pauseUntil: (until, currentTime) => persistedQuota.pauseUntil(until, currentTime),
+    };
+    let providerCalls = 0;
+    const provider: LlmProvider = {
+      id: providerId,
+      model: 'gemini-test',
+      enrich: () => {
+        providerCalls += 1;
+        return Promise.resolve({
+          enrichment: { summary: 'Unexpected', importance: 0.5, topics: ['unexpected'] },
+          usage: {},
+        });
+      },
+    };
+    const processor = new LlmProcessor(
+      repository,
+      provider,
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        requestQuota: racingQuota,
+        now: () => now,
+      }
+    );
+
+    await expect(
+      processor.processArticle(article.id, { retryFailed: true })
+    ).resolves.toMatchObject({
+      claimedCount: 1,
+      completedCount: 0,
+      pauseReason: 'DAILY_LIMIT',
+    });
+    expect(providerCalls).toBe(0);
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.FAILED,
+      llmAttemptCount: 2,
+      llmNextRetryAt: null,
+      llmLastError: 'AUTHENTICATION',
+      llmLastAttemptProvider: 'gemini',
+      llmLastAttemptModel: 'gemini-old',
+      llmLastAttemptAt: previousAttemptAt,
+      llmClaimToken: null,
+    });
+  });
+
+  it('restores the later of the previous retry and the current provider pause', async () => {
+    const first = await createArticle();
+    const second = await createArticle();
+    const dueRetry = new Date('2026-09-24T20:00:00.000Z');
+    const laterPreviousRetry = new Date('2026-09-24T20:10:00.000Z');
+    await client.newsArticle.updateMany({
+      where: { id: { in: [first.id, second.id] } },
+      data: {
+        llmStatus: LlmProcessingStatus.FAILED,
+        llmAttemptCount: 1,
+        llmLastError: 'TEMPORARY',
+      },
+    });
+    await client.newsArticle.update({
+      where: { id: first.id },
+      data: { llmNextRetryAt: dueRetry },
+    });
+    await client.newsArticle.update({
+      where: { id: second.id },
+      data: { llmNextRetryAt: laterPreviousRetry },
+    });
+
+    const claimTime = new Date('2026-09-24T20:01:00.000Z');
+    const providerPause = new Date('2026-09-24T20:05:00.000Z');
+    const firstClaim = await repository.claimNext({
+      ...options(claimTime),
+      articleId: first.id,
+    });
+    const secondClaim = await repository.claimNext({
+      ...options(claimTime),
+      articleId: second.id,
+      allowFailed: true,
+    });
+
+    expect(
+      await repository.release({ ...firstClaim!, claimToken: 'lost-claim-token' }, providerPause)
+    ).toBe(false);
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: first.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.PROCESSING,
+      llmClaimToken: firstClaim!.claimToken,
+    });
+    expect(await repository.release(firstClaim!, providerPause)).toBe(true);
+    expect(await repository.release(secondClaim!, providerPause)).toBe(true);
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: first.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.FAILED,
+      llmNextRetryAt: providerPause,
+      llmAttemptCount: 1,
+    });
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: second.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.FAILED,
+      llmNextRetryAt: laterPreviousRetry,
+      llmAttemptCount: 1,
     });
   });
 });

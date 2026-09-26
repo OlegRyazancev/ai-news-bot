@@ -91,14 +91,23 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Добавлены unit tests для quota exhaustion, 429 batch stop, PostgreSQL failure isolation и manual retry.
 - [x] Добавлены PostgreSQL integration tests для atomic quota reservation, UTC reset, restart/pause recovery, metadata и explicit FAILED retry.
 
+### Дополнительные исправления по повторному review
+
+- [x] `release()` сохраняет permanent `FAILED` с `nextRetryAt=null` без создания автоматического retry.
+- [x] Для ранее retryable `FAILED` восстановленный `nextRetryAt` равен более позднему из previous retry и provider pause.
+- [x] Race между `quota.check()` и `quota.reserve()` освобождает claim по token и не вызывает внешний provider.
+- [x] Исключения из `reserve()` и `startAttempt()` запускают best-effort claim release; ошибка release оставляет stale recovery.
+- [x] Зарезервированный дневной budget не возвращается после неоднозначной infrastructure error.
+- [x] Добавлены unit и PostgreSQL integration regression tests для обоих edge case.
+
 ## 1. Что тестирует агент
 
 ### Build Verification
 
 - [x] `npm run build` проходит.
 - [x] `npm run lint` проходит.
-- [x] `npm run test` проходит: 41 unit tests.
-- [x] `npm run test:integration` проходит в GitHub Actions: 10 PostgreSQL integration tests; локальный запуск недоступен из-за остановленной PostgreSQL/Docker.
+- [x] `npm run test` проходит: 45 unit tests.
+- [ ] `npm run test:integration`: suite расширен до 12 PostgreSQL integration tests; локальный запуск недоступен из-за остановленной PostgreSQL/Docker, требуется текущий CI.
 - [x] `npx prisma generate` проходит.
 - [x] `npx prisma validate` проходит.
 - [x] Docker image `ai-news-bot:stage4` собирается; `.dockerignore` исключает локальные secrets и dev artifacts.
@@ -114,6 +123,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Два пересекающихся processor claims не получают одну статью; атомарность подтверждена PostgreSQL integration test.
 - [x] Mocked 429 переводит запись в отложенное состояние и не вызывает tight retry loop; `Retry-After` учитывается в допустимых границах.
 - [x] PostgreSQL integration: persisted provider pause переживает restart, дневной budget резервируется атомарно и безопасно сбрасывается на следующем UTC-дне.
+- [ ] PostgreSQL integration: quota race сохраняет permanent/retryable FAILED policy, а release проверяет claim token (ожидается CI).
 - [x] Mocked permanent auth/config error не получает автоматический retry и останавливает in-process worker до перезапуска.
 - [ ] С локальным `GEMINI_API_KEY` выполнен реальный запрос к стабильной `gemini-2.5-flash-lite`; structured output проходит Zod-валидацию.
 - [ ] Для реальной сохранённой статьи Gemini записывает осмысленные summary, importance и topics, provider/model, processed timestamp и доступные token counts.

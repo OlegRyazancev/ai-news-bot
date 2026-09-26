@@ -16,6 +16,9 @@ export type ClaimedArticle = Pick<
   previousAttemptCount: number;
   previousNextRetryAt: Date | null;
   previousLastError: string | null;
+  previousLastAttemptProvider: string | null;
+  previousLastAttemptModel: string | null;
+  previousLastAttemptAt: Date | null;
 };
 
 export type AttemptedArticle = ClaimedArticle & {
@@ -46,7 +49,7 @@ export interface LlmArticleRepository {
     model: string,
     now: Date
   ): Promise<AttemptedArticle | null>;
-  release(claim: ClaimedArticle, retryAt: Date): Promise<boolean>;
+  release(claim: ClaimedArticle, blockedUntil?: Date): Promise<boolean>;
   complete(
     claim: AttemptedArticle,
     result: LlmProviderResult,
@@ -57,8 +60,37 @@ export interface LlmArticleRepository {
 
 type CandidateRow = Pick<
   NewsArticle,
-  'id' | 'llmStatus' | 'llmAttemptCount' | 'llmNextRetryAt' | 'llmLastError'
+  | 'id'
+  | 'llmStatus'
+  | 'llmAttemptCount'
+  | 'llmNextRetryAt'
+  | 'llmLastError'
+  | 'llmLastAttemptProvider'
+  | 'llmLastAttemptModel'
+  | 'llmLastAttemptAt'
 >;
+
+function latestDate(first: Date, second: Date): Date {
+  return first > second ? first : second;
+}
+
+function restoredNextRetryAt(claim: ClaimedArticle, blockedUntil?: Date): Date | null {
+  if (claim.previousStatus === LlmProcessingStatus.FAILED) {
+    if (!claim.previousNextRetryAt) return null;
+    return blockedUntil
+      ? latestDate(claim.previousNextRetryAt, blockedUntil)
+      : claim.previousNextRetryAt;
+  }
+
+  if (claim.previousStatus === LlmProcessingStatus.PROCESSING) {
+    if (claim.previousNextRetryAt && blockedUntil) {
+      return latestDate(claim.previousNextRetryAt, blockedUntil);
+    }
+    return blockedUntil ?? claim.previousNextRetryAt;
+  }
+
+  return claim.previousNextRetryAt;
+}
 
 export class PrismaLlmArticleRepository implements LlmArticleRepository {
   constructor(private readonly client: PrismaClient) {}
@@ -100,7 +132,8 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
         : Prisma.empty;
 
       const candidates = await transaction.$queryRaw<CandidateRow[]>(Prisma.sql`
-        SELECT "id", "llmStatus", "llmAttemptCount", "llmNextRetryAt", "llmLastError"
+        SELECT "id", "llmStatus", "llmAttemptCount", "llmNextRetryAt", "llmLastError",
+               "llmLastAttemptProvider", "llmLastAttemptModel", "llmLastAttemptAt"
         FROM "NewsArticle"
         WHERE (
           "llmStatus" = 'PENDING'
@@ -158,6 +191,9 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
         previousAttemptCount: candidate.llmAttemptCount,
         previousNextRetryAt: candidate.llmNextRetryAt,
         previousLastError: candidate.llmLastError,
+        previousLastAttemptProvider: candidate.llmLastAttemptProvider,
+        previousLastAttemptModel: candidate.llmLastAttemptModel,
+        previousLastAttemptAt: candidate.llmLastAttemptAt,
       };
     });
   }
@@ -193,7 +229,7 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
       : null;
   }
 
-  async release(claim: ClaimedArticle, retryAt: Date): Promise<boolean> {
+  async release(claim: ClaimedArticle, blockedUntil?: Date): Promise<boolean> {
     const restoreCompleted = claim.previousStatus === LlmProcessingStatus.COMPLETED;
     const restorePending = claim.previousStatus === LlmProcessingStatus.PENDING;
     const updated = await this.client.newsArticle.updateMany({
@@ -211,12 +247,14 @@ export class PrismaLlmArticleRepository implements LlmArticleRepository {
         llmAttemptCount: claim.previousAttemptCount,
         llmClaimToken: null,
         llmProcessingStartedAt: null,
-        llmNextRetryAt:
-          restoreCompleted || restorePending ? claim.previousNextRetryAt : retryAt,
+        llmNextRetryAt: restoredNextRetryAt(claim, blockedUntil),
         llmLastError:
           claim.previousStatus === LlmProcessingStatus.PROCESSING
             ? 'CLAIM_RELEASED'
             : claim.previousLastError,
+        llmLastAttemptProvider: claim.previousLastAttemptProvider,
+        llmLastAttemptModel: claim.previousLastAttemptModel,
+        llmLastAttemptAt: claim.previousLastAttemptAt,
       },
     });
 
