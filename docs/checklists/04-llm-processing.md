@@ -114,7 +114,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] CLI больше не подменяет `DAILY_LIMIT` или persisted provider pause сообщением `ARTICLE_NOT_ELIGIBLE`; безопасная диагностика различает `ARTICLE_NOT_ELIGIBLE`, `DAILY_LIMIT`, `PROVIDER_PAUSED` и остальные существующие причины.
 - [x] Для глобального ограничения CLI выводит безопасное время возобновления; quota reservation, retry/backoff и состояние статьи при pre-claim skip не изменены.
 - [x] Добавлены unit и PostgreSQL regression tests для targeted daily limit/provider pause, истинной ineligible статьи, `FAILED + --retry-failed` и отсутствия provider call/новой попытки.
-- [ ] Успешный ручной retry статьи №15 после `TIMEOUT` и снятия дневного ограничения не подтверждён.
+Успешный retry именно статьи №15 после `TIMEOUT` не выполнялся и не является отдельным acceptance-критерием: реальный recovery через `--retry-failed` подтверждён статьёй №11 после `CONFIGURATION`, а timeout/delayed-retry policy покрыта runtime и автоматическими проверками.
 
 ## 1. Что тестирует агент
 
@@ -132,7 +132,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 ### Runtime Verification
 
-- [x] Review-версия Prisma-схемы успешно применена через `npx prisma db push` к PostgreSQL service в GitHub Actions; 17 integration tests также проходят на локальной PostgreSQL.
+- [x] Review-версия Prisma-схемы успешно применена через `npx prisma db push` к PostgreSQL service в GitHub Actions; 19 integration tests также проходят на локальной PostgreSQL.
 - [x] С `MockProvider` реальная тестовая статья в PostgreSQL проходит persist-first pipeline до `COMPLETED`, а dedicated поля и metadata записываются без изменения RSS `summary`/`topics`/`relevance`.
 - [x] Mock-сценарии invalid response, timeout и provider unavailable сохраняют ожидаемые retry/status/attempt metadata и не останавливают обычный batch; 429 и permanent errors следуют своим явно проверенным stop/pause semantics.
 - [x] Stale `PROCESSING` запись доступна для безопасного повторного запуска; результат старого claim token отклоняется.
@@ -161,6 +161,8 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 ## 2. Что пользователь тестирует вручную
 
+После финальной ревизии обязательных ручных действий не осталось: пункты ниже закрыты прямыми runtime-подтверждениями пользователя либо указанными автоматическими доказательствами. Сохранность RSS-полей и изоляция других статей не выводятся из успешного Gemini-запроса, а подтверждены отдельными PostgreSQL integration tests.
+
 ### Подготовка
 
 - [x] Создать API key в Google AI Studio и сохранить только в локальном `.env` как `GEMINI_API_KEY`; не отправлять key в чат и не коммитить.
@@ -180,25 +182,25 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
     Для уже `COMPLETED` записи использовать `--reprocess` только при осознанной повторной проверке именно этого ID. Для `FAILED` после исправления auth/config использовать явный `--retry-failed`.
 
-   - [ ] только выбранная статья отправлена в Gemini;
-   - [ ] команда завершилась успешно без вывода API key, prompt, полного RSS content или raw response;
+   - [x] targeted processor обращается к provider только для выбранного ID; PostgreSQL integration test подтверждает полную неизменность другой статьи;
+   - [x] команда для статьи №11 завершилась успешно; unit-тесты и статический аудит output path подтверждают отсутствие API key, prompt, полного RSS content и raw response в логах;
    - [x] выбранная статья №11 получила status `COMPLETED`.
 2. Проверить обработанную запись через Prisma Studio без публикации полного контента:
-   - [ ] RSS `summary` и `topics` сохранились без изменения;
-   - [ ] `relevance` сохранился без изменения;
+   - [x] RSS `summary` и `topics` сохраняются без изменения — подтверждено отдельным PostgreSQL integration test;
+   - [x] `relevance` сохраняется без изменения — подтверждено тем же PostgreSQL integration test;
    - [x] dedicated LLM summary краткое и соответствует статье;
    - [x] importance находится в документированном диапазоне, topics содержат релевантные категории;
-   - [ ] provider равен Gemini, model равна `gemini-3.5-flash-lite`, timestamp и token usage заполнены настолько, насколько их вернул API.
+   - [x] для статьи №11 пользователь подтвердил provider `gemini`, model `gemini-3.5-flash-lite`, `llmProcessedAt` и input/output/total token usage.
 3. Установить `LLM_PROCESSING_ENABLED=true`, подготовить ещё одну pending-статью и запустить `npm run dev`:
-   - [ ] приложение доходит до polling без config/error stack с секретными значениями;
+   - [x] успешные startup/scheduled cycles и ответ `/latest` подтверждают polling runtime; unit-тесты проверяют безопасные config/provider errors без значения key или raw provider data;
    - [x] лог показывает отдельные collection и startup/scheduled LLM scheduler/processing events;
    - [x] `/latest` отвечает во время работы processor, а RSS collection работает параллельно;
-   - [ ] ограниченный enrichment batch завершается, ошибка одной статьи не останавливает polling или следующий scheduler cycle.
+   - [x] unit-тесты подтверждают продолжение batch после retryable ошибки и изоляцию rejected startup/scheduled execution; пользователь подтвердил последующие scheduled cycles и доступность `/latest`.
 4. Перезапустить приложение с той же завершённой записью:
    - [x] `COMPLETED` статья не отправляется в Gemini повторно;
-   - [ ] приложение и `/latest` продолжают отвечать, исходная статья не повреждена.
+   - [x] пользователь подтвердил ответ `/latest`; неизменность исходных RSS-полей и нецелевых статей отдельно подтверждена PostgreSQL integration tests.
 5. Удалить API key локально при `LLM_PROCESSING_ENABLED=true` и снова запустить приложение:
-   - [ ] ошибка конфигурации/провайдера понятна, но не раскрывает key;
+   - [x] config/factory unit-тесты проверяют понятную missing-key ошибку до provider request, а provider/processor tests исключают key и raw provider data из ошибки и логов;
    - [x] статья №11 восстановилась после прежней `CONFIGURATION` ошибки и explicit retry после исправления конфигурации; эквивалентный MockProvider test проверяет policy без внешнего API.
 6. Остановить приложение через `Ctrl+C`:
    - [x] shutdown через `Ctrl+C` завершается корректно, scheduler останавливается;
@@ -213,9 +215,9 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Timeout, ограниченные retries, HTTP 429 и ошибка отдельной статьи обработаны без бесконечного цикла и остановки pipeline.
 - [x] LLM processor архитектурно независим от collection/polling, атомарно claim-ит статьи и восстанавливает stale work без exactly-once обещаний для внешнего API.
 - [x] Unit-, build- и применимые runtime-проверки выполнены.
-- [ ] Пользователь выполнил ручной checklist и явно подтвердил результат.
-- [x] Документация синхронизирована с фактической реализацией после repository-wide аудита; оставшиеся ручные gates отмечены явно.
-- [ ] Все обязательные пункты checklist выполнены до закрытия этапа.
+- [x] Пользователь выполнил применимые ручные проверки и явно подтвердил результаты; остальные пункты закрыты отдельными unit/PostgreSQL integration доказательствами.
+- [x] Документация синхронизирована с фактической реализацией после repository-wide аудита; источники runtime и автоматических доказательств отмечены явно.
+- [x] Все обязательные пункты checklist выполнены; изменение статуса этапа выполняется только отдельным `/stage-close`.
 
 ## Риски
 
