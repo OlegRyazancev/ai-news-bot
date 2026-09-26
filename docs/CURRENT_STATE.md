@@ -24,7 +24,7 @@
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
 | Gemini API                   | ✅ Runtime-Verified | Статья №11 успешно обработана `gemini-3.5-flash-lite`; structured result и persistence подтверждены пользователем |
-| Tests                        | 🟡 Pending CI       | 58 unit и 19 PostgreSQL integration tests проходят локально; текущий CI ожидается |
+| Tests                        | ✅ CI-Verified      | 58 unit и 19 PostgreSQL integration tests проходят локально и в GitHub Actions |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -84,7 +84,7 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Исправлена misleading targeted CLI-диагностика после реального `TIMEOUT` статьи №15 и исчерпания дневного бюджета 5/5; новые unit/PostgreSQL regression tests проходят локально, текущий CI ожидается.
+Исправлена misleading targeted CLI-диагностика после реального `TIMEOUT` статьи №15 и исчерпания дневного бюджета 5/5; новые unit/PostgreSQL regression tests проходят локально и в GitHub Actions.
 
 ## Следующие рекомендуемые шаги (NOW)
 1. Закрыть оставшиеся точечные ручные пункты checklist Stage 4
@@ -95,7 +95,7 @@
 npm run build     ✅
 npm run lint      ✅
 npm run test      ✅ 58 unit tests
-npm run test:integration ✅ 19 PostgreSQL integration tests локально; текущий CI ожидается
+npm run test:integration ✅ 19 PostgreSQL integration tests локально и в GitHub Actions
 npx prisma generate   ✅
 npx prisma validate   ✅
 npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service

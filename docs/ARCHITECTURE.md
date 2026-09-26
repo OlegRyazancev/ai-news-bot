@@ -14,7 +14,7 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED (58 unit + 19 PostgreSQL integration tests verified locally; current CI pending) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED; CI-VERIFIED (58 unit + 19 PostgreSQL integration tests) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |

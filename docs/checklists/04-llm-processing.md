@@ -122,8 +122,8 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 - [x] `npm run build` проходит.
 - [x] `npm run lint` проходит.
-- [x] `npm run test` проходит локально: 58 unit tests; текущий CI ожидается.
-- [x] `npm run test:integration` проходит локально: 19 PostgreSQL integration tests; текущий CI ожидается.
+- [x] `npm run test` проходит локально и в GitHub Actions: 58 unit tests.
+- [x] `npm run test:integration` проходит локально и в GitHub Actions: 19 PostgreSQL integration tests.
 - [x] `npx prisma generate` проходит.
 - [x] `npx prisma validate` проходит.
 - [x] Docker image `ai-news-bot:stage4` собирается; `.dockerignore` исключает локальные secrets и dev artifacts.
