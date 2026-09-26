@@ -24,7 +24,7 @@
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
 | Gemini API                   | 🟡 Failure Observed | Targeted attempt с прежней Gemini 2.5 завершился `CONFIGURATION`; `gemini-3.5-flash-lite` ещё не запускалась |
-| Tests                        | 🟡 Pending CI       | 49 unit и 12 PostgreSQL integration tests проходят локально; текущий CI ожидается |
+| Tests                        | ✅ Verified         | 49 unit и 12 PostgreSQL integration tests проходят локально и в GitHub Actions |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -81,7 +81,7 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Диагностирован неуспешный targeted Gemini 2.5 run: широкая категория `CONFIGURATION` скрывала HTTP 400/404. Реализованы безопасные allowlisted diagnostics и переход на `gemini-3.5-flash-lite`; текущий CI ожидается.
+Диагностирован неуспешный targeted Gemini 2.5 run: широкая категория `CONFIGURATION` скрывала HTTP 400/404. Безопасные allowlisted diagnostics и переход на `gemini-3.5-flash-lite` подтверждены CI.
 
 ## Следующие рекомендуемые шаги (NOW)
 1. Проверить project-specific limits и доступность `gemini-3.5-flash-lite` в Google AI Studio
@@ -93,7 +93,7 @@
 npm run build     ✅
 npm run lint      ✅
 npm run test      ✅ 49 unit tests
-npm run test:integration ✅ 12 PostgreSQL integration tests локально
+npm run test:integration ✅ 12 PostgreSQL integration tests локально и в GitHub Actions
 npx prisma generate   ✅
 npx prisma validate   ✅
 npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service
