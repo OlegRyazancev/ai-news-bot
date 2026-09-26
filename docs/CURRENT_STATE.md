@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment и PostgreSQL-backed processor реализованы. Сохранение FAILED retry policy при quota race и best-effort claim release после quota/startAttempt infrastructure errors подтверждены CI. Реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
+**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment и PostgreSQL-backed processor реализованы. После реального HTTP 400/404-class failure прежней Gemini 2.5 модель по умолчанию заменяется на стабильную `gemini-3.5-flash-lite`, а безопасная диагностика сохраняет только allowlisted metadata. Успешная Gemini runtime-проверка и ручная приёмка ещё не выполнены.
 
 ## Статус проверки
 
@@ -23,8 +23,8 @@
 | Docker Build                 | ✅ Build-Verified   | `ai-news-bot:stage4` собран; runtime контейнеров с реальными интеграциями ещё не проверен        |
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
-| Gemini API                   | ❌ Not Runtime-Verified | Реальный API key и `gemini-2.5-flash-lite` ещё не запускались                                 |
-| Tests                        | ✅ Verified         | 45 unit tests проходят локально и в CI; 12 PostgreSQL integration tests проходят в GitHub Actions |
+| Gemini API                   | 🟡 Failure Observed | Targeted attempt с прежней Gemini 2.5 завершился `CONFIGURATION`; `gemini-3.5-flash-lite` ещё не запускалась |
+| Tests                        | 🟡 Pending CI       | 49 unit и 12 PostgreSQL integration tests проходят локально; текущий CI ожидается |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -58,6 +58,8 @@
 - Изоляция repository/startup/scheduled/shutdown ошибок LLM processor от основного процесса
 - Сохранение permanent/retryable FAILED policy при quota race между availability check и atomic reservation
 - Best-effort claim release после reserve/startAttempt exceptions без quota refund; при недоступной БД остаётся stale recovery
+- Безопасная Gemini-диагностика: `httpStatus`, allowlisted `providerStatus`/`diagnosticCode` без raw message, secrets, headers, request/response или prompt
+- Модель по умолчанию `gemini-3.5-flash-lite`; stable model ID, structured outputs и используемый JSON Schema subset подтверждены официальной документацией
 - Targeted processing одной явной статьи через `npm run llm:process-article`
 - PostgreSQL integration tests и CI PostgreSQL service
 
@@ -79,19 +81,19 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Реализованы и подтверждены CI два дополнительных review edge case: корректное восстановление FAILED после quota race и best-effort release после reserve/startAttempt infrastructure errors.
+Диагностирован неуспешный targeted Gemini 2.5 run: широкая категория `CONFIGURATION` скрывала HTTP 400/404. Реализованы безопасные allowlisted diagnostics и переход на `gemini-3.5-flash-lite`; текущий CI ожидается.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
-2. Выполнить targeted runtime-проверку `gemini-2.5-flash-lite` на одной выбранной статье
+1. Проверить project-specific limits и доступность `gemini-3.5-flash-lite` в Google AI Studio
+2. Выполнить targeted runtime-проверку `gemini-3.5-flash-lite` на одной выбранной статье через явный `--retry-failed`
 3. Провести ручную приёмку polling/collection/processor
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
-npm run test      ✅ 45 unit tests
-npm run test:integration ✅ 12 PostgreSQL integration tests в GitHub Actions
+npm run test      ✅ 49 unit tests
+npm run test:integration ✅ 12 PostgreSQL integration tests локально
 npx prisma generate   ✅
 npx prisma validate   ✅
 npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service

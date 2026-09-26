@@ -7,12 +7,37 @@ export type LlmProviderErrorCode =
   | 'TIMEOUT'
   | 'UNKNOWN';
 
+export type LlmProviderStatus =
+  | 'INVALID_ARGUMENT'
+  | 'UNAUTHENTICATED'
+  | 'PERMISSION_DENIED'
+  | 'NOT_FOUND'
+  | 'RESOURCE_EXHAUSTED'
+  | 'DEADLINE_EXCEEDED'
+  | 'INTERNAL'
+  | 'UNAVAILABLE';
+
+export type LlmProviderDiagnosticCode =
+  | 'INVALID_API_KEY'
+  | 'API_KEY_BLOCKED'
+  | 'INVALID_JSON_SCHEMA'
+  | 'INVALID_REQUEST'
+  | 'MODEL_ACCESS_RESTRICTED'
+  | 'MODEL_NOT_FOUND_OR_UNSUPPORTED'
+  | 'RESOURCE_NOT_FOUND'
+  | 'AUTHENTICATION_REJECTED'
+  | 'RATE_LIMIT_REACHED'
+  | 'REQUEST_TIMEOUT'
+  | 'PROVIDER_UNAVAILABLE';
+
 export class LlmProviderError extends Error {
   constructor(
     readonly code: LlmProviderErrorCode,
     readonly retryable: boolean,
-    readonly status?: number,
-    readonly retryAfterMs?: number
+    readonly httpStatus?: number,
+    readonly retryAfterMs?: number,
+    readonly providerStatus?: LlmProviderStatus,
+    readonly diagnosticCode?: LlmProviderDiagnosticCode
   ) {
     super(`LLM provider error: ${code}`);
     this.name = 'LlmProviderError';
@@ -76,26 +101,145 @@ function statusOf(error: unknown): number | undefined {
   return typeof status === 'number' ? status : undefined;
 }
 
+const ALLOWED_PROVIDER_STATUSES = new Set<LlmProviderStatus>([
+  'INVALID_ARGUMENT',
+  'UNAUTHENTICATED',
+  'PERMISSION_DENIED',
+  'NOT_FOUND',
+  'RESOURCE_EXHAUSTED',
+  'DEADLINE_EXCEEDED',
+  'INTERNAL',
+  'UNAVAILABLE',
+]);
+
+interface ProviderErrorDetails {
+  providerStatus?: LlmProviderStatus;
+  providerMessage?: string;
+}
+
+function providerErrorDetails(error: unknown): ProviderErrorDetails {
+  if (objectValue(error, 'name') !== 'ApiError') return {};
+
+  const rawMessage = objectValue(error, 'message');
+  if (typeof rawMessage !== 'string') return {};
+
+  try {
+    const parsed: unknown = JSON.parse(rawMessage);
+    const providerError = objectValue(parsed, 'error');
+    const status = objectValue(providerError, 'status');
+    const message = objectValue(providerError, 'message');
+    return {
+      providerStatus:
+        typeof status === 'string' && ALLOWED_PROVIDER_STATUSES.has(status as LlmProviderStatus)
+          ? (status as LlmProviderStatus)
+          : undefined,
+      providerMessage: typeof message === 'string' ? message : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function diagnosticCodeFor(
+  status: number | undefined,
+  providerMessage: string | undefined
+): LlmProviderDiagnosticCode | undefined {
+  const message = providerMessage?.toLowerCase() ?? '';
+
+  if (status === 400) {
+    if (message.includes('api key not valid') || message.includes('api_key_invalid')) {
+      return 'INVALID_API_KEY';
+    }
+    if (message.includes('api key was reported as leaked') || message.includes('api key is blocked')) {
+      return 'API_KEY_BLOCKED';
+    }
+    if (
+      message.includes('responsejsonschema') ||
+      message.includes('response_json_schema') ||
+      message.includes('response schema')
+    ) {
+      return 'INVALID_JSON_SCHEMA';
+    }
+    return 'INVALID_REQUEST';
+  }
+
+  if (status === 404) {
+    if (message.includes('no longer available to new users')) {
+      return 'MODEL_ACCESS_RESTRICTED';
+    }
+    if (
+      message.includes('model') &&
+      (message.includes('not found') || message.includes('not supported for generatecontent'))
+    ) {
+      return 'MODEL_NOT_FOUND_OR_UNSUPPORTED';
+    }
+    return 'RESOURCE_NOT_FOUND';
+  }
+
+  if (status === 401 || status === 403) return 'AUTHENTICATION_REJECTED';
+  if (status === 429) return 'RATE_LIMIT_REACHED';
+  if (status === 408) return 'REQUEST_TIMEOUT';
+  if (status !== undefined && status >= 500) return 'PROVIDER_UNAVAILABLE';
+  return undefined;
+}
+
 export function normalizeProviderError(error: unknown): LlmProviderError {
   if (error instanceof LlmProviderError) return error;
 
   const status = statusOf(error);
   const retryAfterMs = extractRetryAfterMs(error);
+  const details = providerErrorDetails(error);
+  const diagnosticCode = diagnosticCodeFor(status, details.providerMessage);
 
   if (status === 401 || status === 403) {
-    return new LlmProviderError('AUTHENTICATION', false, status);
+    return new LlmProviderError(
+      'AUTHENTICATION',
+      false,
+      status,
+      undefined,
+      details.providerStatus,
+      diagnosticCode
+    );
   }
   if (status === 400 || status === 404) {
-    return new LlmProviderError('CONFIGURATION', false, status);
+    return new LlmProviderError(
+      'CONFIGURATION',
+      false,
+      status,
+      undefined,
+      details.providerStatus,
+      diagnosticCode
+    );
   }
   if (status === 429) {
-    return new LlmProviderError('RATE_LIMITED', true, status, retryAfterMs);
+    return new LlmProviderError(
+      'RATE_LIMITED',
+      true,
+      status,
+      retryAfterMs,
+      details.providerStatus,
+      diagnosticCode
+    );
   }
   if (status === 408) {
-    return new LlmProviderError('TIMEOUT', true, status, retryAfterMs);
+    return new LlmProviderError(
+      'TIMEOUT',
+      true,
+      status,
+      retryAfterMs,
+      details.providerStatus,
+      diagnosticCode
+    );
   }
   if (status !== undefined && status >= 500) {
-    return new LlmProviderError('TEMPORARY', true, status, retryAfterMs);
+    return new LlmProviderError(
+      'TEMPORARY',
+      true,
+      status,
+      retryAfterMs,
+      details.providerStatus,
+      diagnosticCode
+    );
   }
 
   const name = objectValue(error, 'name');
@@ -106,7 +250,14 @@ export function normalizeProviderError(error: unknown): LlmProviderError {
     return new LlmProviderError('TEMPORARY', true);
   }
 
-  return new LlmProviderError('UNKNOWN', false, status);
+  return new LlmProviderError(
+    'UNKNOWN',
+    false,
+    status,
+    undefined,
+    details.providerStatus,
+    diagnosticCode
+  );
 }
 
 export function isGlobalPermanentError(error: LlmProviderError): boolean {

@@ -174,7 +174,7 @@ npm run llm:process-article -- <id> [--reprocess | --retry-failed] # Явная 
 | `NEWS_MAX_ITEMS_PER_SOURCE` | Максимум элементов из одного источника за цикл | Нет |
 | `LLM_PROCESSING_ENABLED` | Включить независимый LLM processor | Нет (`false`) |
 | `LLM_PROVIDER` | Активный provider: `mock` или `gemini` | Нет (`mock`) |
-| `LLM_MODEL` | Модель реального provider | Нет (`gemini-2.5-flash-lite`) |
+| `LLM_MODEL` | Модель реального provider | Нет (`gemini-3.5-flash-lite`) |
 | `GEMINI_API_KEY` | Server-side key из Google AI Studio; обязателен только для включённого Gemini | Условно |
 | `LLM_PROCESSING_CRON` | Отдельное расписание enrichment | Нет (`*/2 * * * *`) |
 | `LLM_PROCESSING_RUN_ON_STARTUP` | Запуск processor при старте | Нет (`true`) |
@@ -192,7 +192,7 @@ npm run llm:process-article -- <id> [--reprocess | --retry-failed] # Явная 
 2. Не публикуй key и добавь его только в локальный `.env`:
    ```dotenv
    LLM_PROVIDER=gemini
-   LLM_MODEL=gemini-2.5-flash-lite
+   LLM_MODEL=gemini-3.5-flash-lite
    GEMINI_API_KEY=your_private_key
    ```
 3. Сначала оставь `LLM_PROCESSING_ENABLED=false` и примени схему: `npx prisma db push`.
@@ -206,6 +206,8 @@ npm run llm:process-article -- <id> [--reprocess | --retry-failed] # Явная 
 `llmProvider`, `llmModel`, `llmProcessedAt` и token usage описывают последний успешный enrichment. `llmLastAttemptProvider`, `llmLastAttemptModel`, `llmLastAttemptAt`, status и error описывают последнюю попытку. Поэтому неуспешный reprocess не приписывает старый результат новой модели.
 
 RSS title/summary/content считаются недоверенными данными. API key не включается в prompts, логи или test fixtures.
+
+`gemini-3.5-flash-lite` — стабильная модель, для которой официальная документация подтверждает structured outputs. Используемый `responseJsonSchema` содержит только поддерживаемые JSON Schema keywords. HTTP-ошибки Gemini логируются только как безопасные `httpStatus`, allowlisted `providerStatus` и `diagnosticCode`; исходные provider message, headers, request/response и prompt не сохраняются и не выводятся.
 
 ## Лицензия
 

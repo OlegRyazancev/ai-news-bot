@@ -28,7 +28,7 @@ const envSchema = z.object({
     .default('false')
     .transform(value => value === 'true'),
   LLM_PROVIDER: z.enum(['mock', 'gemini']).default('mock'),
-  LLM_MODEL: z.string().trim().min(1).default('gemini-2.5-flash-lite'),
+  LLM_MODEL: z.string().trim().min(1).default('gemini-3.5-flash-lite'),
   GEMINI_API_KEY: z.preprocess(
     value => (typeof value === 'string' && value.trim() === '' ? undefined : value),
     z.string().trim().min(1).optional()

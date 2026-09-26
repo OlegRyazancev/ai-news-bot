@@ -1,4 +1,5 @@
 import { LlmProcessingStatus } from '@prisma/client';
+import { ApiError } from '@google/genai';
 import { describe, expect, it, vi } from 'vitest';
 import { LlmProviderError } from '../src/llm/errors';
 import { MockProvider } from '../src/llm/mock-provider';
@@ -285,6 +286,60 @@ describe('LlmProcessor', () => {
       expect.objectContaining({ articleId: 42n, allowFailed: true })
     );
   });
+
+  it.each([
+    {
+      httpStatus: 400,
+      providerStatus: 'INVALID_ARGUMENT',
+      rawMessage:
+        'Invalid responseJsonSchema; API_KEY=secret-400; authorization=secret-header; prompt=secret-prompt.',
+      diagnosticCode: 'INVALID_JSON_SCHEMA',
+    },
+    {
+      httpStatus: 404,
+      providerStatus: 'NOT_FOUND',
+      rawMessage:
+        'Model is not found for generateContent; API_KEY=secret-404; response=secret-response.',
+      diagnosticCode: 'MODEL_NOT_FOUND_OR_UNSUPPORTED',
+    },
+  ] as const)(
+    'logs allowlisted diagnostics without raw HTTP $httpStatus provider data',
+    async ({ httpStatus, providerStatus, rawMessage, diagnosticCode }) => {
+      const article = claim();
+      const store = repository(article);
+      const testLogger = logger();
+      const provider: LlmProvider = {
+        id: 'gemini',
+        model: 'gemini-3.5-flash-lite',
+        enrich: vi.fn().mockRejectedValue(
+          new ApiError({
+            status: httpStatus,
+            message: JSON.stringify({
+              error: { code: httpStatus, status: providerStatus, message: rawMessage },
+            }),
+          })
+        ),
+      };
+
+      await processor(store, provider, {}, testLogger).run('scheduled');
+
+      expect(testLogger.warn).toHaveBeenCalledWith(
+        'LLM article processing failed',
+        expect.objectContaining({
+          errorCode: 'CONFIGURATION',
+          httpStatus,
+          providerStatus,
+          diagnosticCode,
+        })
+      );
+      const serializedLogs = JSON.stringify(testLogger.warn.mock.calls);
+      expect(serializedLogs).not.toContain(rawMessage);
+      expect(serializedLogs).not.toContain('secret-');
+      expect(serializedLogs).not.toContain('authorization');
+      expect(serializedLogs).not.toContain('prompt');
+      expect(serializedLogs).not.toContain('response=');
+    }
+  );
 
   it('skips an overlapping run independently of the database claim', async () => {
     let resolveClaim!: (value: ClaimedArticle | null) => void;

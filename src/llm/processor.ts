@@ -363,6 +363,9 @@ export class LlmProcessor {
       model: this.provider.model,
       attempt: article.llmAttemptCount,
       errorCode: error.code,
+      httpStatus: error.httpStatus,
+      providerStatus: error.providerStatus,
+      diagnosticCode: error.diagnosticCode,
       retryScheduled: nextRetryAt !== null,
       nextRetryAt: nextRetryAt?.toISOString(),
     });

@@ -15,7 +15,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 ### In scope
 
 - Provider-independent интерфейс `LlmProvider` и фабрика на основе валидируемой конфигурации.
-- Один реальный адаптер `GeminiProvider` через официальный SDK `@google/genai` и стабильную модель `gemini-2.5-flash-lite` по умолчанию.
+- Один реальный адаптер `GeminiProvider` через официальный SDK `@google/genai` и стабильную модель `gemini-3.5-flash-lite` по умолчанию.
 - `MockProvider` для детерминированной разработки и unit-тестов без внешнего API.
 - Один structured JSON response с LLM summary, importance и topics, затем независимая Zod-валидация.
 - Независимый от RSS collection и Telegram polling persist-first processor, выбирающий из PostgreSQL новые и ранее не обработанные статьи ограниченными batch.
@@ -45,11 +45,10 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 - [x] Этап 3 завершён: статьи persist-first сохраняются в PostgreSQL и дедуплицируются по URL.
 - [x] Выбран provider-independent контракт с `GeminiProvider` и `MockProvider`.
-- [x] Выбрана модель по умолчанию `gemini-2.5-flash-lite` и официальный SDK `@google/genai`.
+- [x] Выбрана модель по умолчанию `gemini-3.5-flash-lite` и официальный SDK `@google/genai`.
 - [x] Выбрано dedicated хранение LLM-результатов и метаданных без изменения RSS-полей.
-- [x] Официальная документация подтверждает stable model ID и поддержку structured output.
-- [x] Официальная pricing-документация указывает free tier для Gemini 2.5 Flash-Lite.
-- [ ] Пользователь создал Gemini API key и добавил его только в локальный `.env`; секрет не выводится и не коммитится.
+- [x] Официальная документация подтверждает stable model ID `gemini-3.5-flash-lite`, совместимость с `models.generateContent`, structured outputs и используемым JSON Schema subset.
+- [x] Пользователь создал Gemini API key и добавил его только в локальный `.env`; секрет не выводится и не коммитится.
 - [ ] Пользователь проверил доступные конкретному Google AI Studio project RPM/TPM/RPD и региональную доступность; опубликованные лимиты не считаются гарантированными.
 - [x] До установки выбрать и зафиксировать актуальную Node.js 20-совместимую версию `@google/genai`; зафиксирована точная версия `2.24.0`.
 
@@ -100,14 +99,22 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Зарезервированный дневной budget не возвращается после неоднозначной infrastructure error.
 - [x] Добавлены unit и PostgreSQL integration regression tests для обоих edge case.
 
+### Исправления после первой Gemini runtime-попытки
+
+- [x] HTTP 400/404 больше не скрываются одной категорией: нормализованная ошибка содержит безопасные `httpStatus`, allowlisted `providerStatus` и `diagnosticCode`.
+- [x] Raw `ApiError.message`, API key, headers, request/response и prompt не сохраняются и не логируются.
+- [x] Добавлены unit-тесты HTTP 400/404 и проверки отсутствия secret/raw provider data в логах.
+- [x] Модель по умолчанию изменена с ограниченной для нового project Gemini 2.5 на стабильную `gemini-3.5-flash-lite`.
+- [x] По официальной документации подтверждены `@google/genai`/`models.generateContent`, structured outputs и keywords существующей JSON Schema.
+
 ## 1. Что тестирует агент
 
 ### Build Verification
 
 - [x] `npm run build` проходит.
 - [x] `npm run lint` проходит.
-- [x] `npm run test` проходит: 45 unit tests.
-- [x] `npm run test:integration` проходит в GitHub Actions: 12 PostgreSQL integration tests; локальный запуск недоступен из-за остановленной PostgreSQL/Docker.
+- [x] `npm run test` проходит: 49 unit tests.
+- [x] `npm run test:integration` проходит локально: 12 PostgreSQL integration tests; требуется подтверждение текущим CI.
 - [x] `npx prisma generate` проходит.
 - [x] `npx prisma validate` проходит.
 - [x] Docker image `ai-news-bot:stage4` собирается; `.dockerignore` исключает локальные secrets и dev artifacts.
@@ -125,7 +132,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] PostgreSQL integration: persisted provider pause переживает restart, дневной budget резервируется атомарно и безопасно сбрасывается на следующем UTC-дне.
 - [x] PostgreSQL integration: quota race сохраняет permanent/retryable FAILED policy, а release проверяет claim token.
 - [x] Mocked permanent auth/config error не получает автоматический retry и останавливает in-process worker до перезапуска.
-- [ ] С локальным `GEMINI_API_KEY` выполнен реальный запрос к стабильной `gemini-2.5-flash-lite`; structured output проходит Zod-валидацию.
+- [ ] С локальным `GEMINI_API_KEY` выполнен успешный реальный запрос к стабильной `gemini-3.5-flash-lite`; structured output проходит Zod-валидацию.
 - [ ] Для реальной сохранённой статьи Gemini записывает осмысленные summary, importance и topics, provider/model, processed timestamp и доступные token counts.
 - [x] Повторный обычный цикл не claim-ит уже `COMPLETED` статью; explicit targeted reprocessing работает только для указанного ID.
 - [ ] Targeted Gemini runtime-проверка действует только на явно выбранную статью и не перезаписывает остальные завершённые записи.
@@ -137,10 +144,10 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 ### Подготовка
 
-- [ ] Создать API key в Google AI Studio и сохранить только в локальном `.env` как `GEMINI_API_KEY`; не отправлять key в чат и не коммитить.
-- [ ] В Google AI Studio открыть rate limits выбранного project и убедиться, что `gemini-2.5-flash-lite` доступна на free tier; сообщить агенту только несекретные лимиты/ошибку доступности.
+- [x] Создать API key в Google AI Studio и сохранить только в локальном `.env` как `GEMINI_API_KEY`; не отправлять key в чат и не коммитить.
+- [ ] В Google AI Studio открыть rate limits выбранного project и убедиться, что `gemini-3.5-flash-lite` доступна; сообщить агенту только несекретные лимиты/ошибку доступности.
 - [ ] Убедиться, что PostgreSQL запущен, актуальная Prisma-схема применена, другой экземпляр бота остановлен, а в БД есть хотя бы одна содержательная статья.
-- [ ] Установить `LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-2.5-flash-lite`, `LLM_PROCESSING_ENABLED=false` и небольшой batch size согласно обновлённой `.env.example`.
+- [ ] Установить `LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.5-flash-lite`, `LLM_PROCESSING_ENABLED=false` и небольшой batch size согласно обновлённой `.env.example`.
 
 ### Пошаговая проверка и ожидаемые результаты
 
@@ -160,7 +167,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
    - [ ] `relevance` сохранился без изменения;
    - [ ] dedicated LLM summary краткое и соответствует статье;
    - [ ] importance находится в документированном диапазоне, topics содержат релевантные категории;
-   - [ ] provider равен Gemini, model равна `gemini-2.5-flash-lite`, timestamp и token usage заполнены настолько, насколько их вернул API.
+   - [ ] provider равен Gemini, model равна `gemini-3.5-flash-lite`, timestamp и token usage заполнены настолько, насколько их вернул API.
 3. Установить `LLM_PROCESSING_ENABLED=true`, подготовить ещё одну pending-статью и запустить `npm run dev`:
    - [ ] приложение доходит до polling без config/error stack с секретными значениями;
    - [ ] лог показывает отдельные collection и LLM scheduler/processing events;
@@ -180,7 +187,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 - [x] Бизнес-логика использует `LlmProvider` и не импортирует `@google/genai` вне Gemini adapter.
 - [x] Конфигурация выбирает active provider и model; `GeminiProvider` и `MockProvider` создаются через factory.
-- [ ] Реальная сохранённая статья успешно обработана `gemini-2.5-flash-lite`, а structured result валидирован Zod.
+- [ ] Реальная сохранённая статья успешно обработана `gemini-3.5-flash-lite`, а structured result валидирован Zod.
 - [x] RSS-поля не перезаписываются; dedicated summary, importance, topics и processing/token metadata доступны последующим этапам.
 - [x] Timeout, ограниченные retries, HTTP 429 и ошибка отдельной статьи обработаны без бесконечного цикла и остановки pipeline.
 - [x] LLM processor архитектурно независим от collection/polling, атомарно claim-ит статьи и восстанавливает stale work без exactly-once обещаний для внешнего API.

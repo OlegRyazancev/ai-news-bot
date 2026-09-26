@@ -12,7 +12,7 @@ describe('LLM environment configuration', () => {
     expect(parseEnv(baseEnv)).toMatchObject({
       LLM_PROCESSING_ENABLED: false,
       LLM_PROVIDER: 'mock',
-      LLM_MODEL: 'gemini-2.5-flash-lite',
+      LLM_MODEL: 'gemini-3.5-flash-lite',
       LLM_MAX_ATTEMPTS: 3,
       LLM_DAILY_REQUEST_LIMIT: 20,
     });

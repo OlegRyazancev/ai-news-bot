@@ -7,7 +7,7 @@
 - **Текущий этап:** 4. LLM-обработка
 - **Статус:** 🟡 В работе
 - **Подтверждено:** provider-independent pipeline, MockProvider и PostgreSQL state/retry/concurrency paths проверены автоматически; Gemini runtime ещё не подтверждён.
-- **Следующий крупный milestone:** выполнить реальную `gemini-2.5-flash-lite` обработку и ручную приёмку этапа 4.
+- **Следующий крупный milestone:** выполнить успешную `gemini-3.5-flash-lite` обработку и ручную приёмку этапа 4.
 
 ## Карта этапов
 

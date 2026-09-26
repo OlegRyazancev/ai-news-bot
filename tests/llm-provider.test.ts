@@ -1,3 +1,4 @@
+import { ApiError } from '@google/genai';
 import { describe, expect, it, vi } from 'vitest';
 import { extractRetryAfterMs, normalizeProviderError } from '../src/llm/errors';
 import { createLlmProvider } from '../src/llm/factory';
@@ -109,6 +110,57 @@ describe('GeminiProvider', () => {
       retryable: true,
     });
   });
+
+  it.each([
+    {
+      httpStatus: 400,
+      providerStatus: 'INVALID_ARGUMENT',
+      providerMessage:
+        'Invalid responseJsonSchema. Sensitive values: API_KEY=secret-400; prompt=private-prompt.',
+      diagnosticCode: 'INVALID_JSON_SCHEMA',
+    },
+    {
+      httpStatus: 404,
+      providerStatus: 'NOT_FOUND',
+      providerMessage:
+        'This model is no longer available to new users. Sensitive value: API_KEY=secret-404.',
+      diagnosticCode: 'MODEL_ACCESS_RESTRICTED',
+    },
+  ] as const)(
+    'normalizes HTTP $httpStatus ApiError without retaining its original message',
+    async ({ httpStatus, providerStatus, providerMessage, diagnosticCode }) => {
+      const provider = new GeminiProvider({
+        apiKey: 'constructor-secret-not-real',
+        model: 'gemini-test',
+        timeoutMs: 1000,
+        client: {
+          models: {
+            generateContent: vi.fn().mockRejectedValue(
+              new ApiError({
+                status: httpStatus,
+                message: JSON.stringify({
+                  error: { code: httpStatus, status: providerStatus, message: providerMessage },
+                }),
+              })
+            ),
+          },
+        } as never,
+      });
+
+      const error = await provider.enrich(article).catch((cause: unknown) => cause);
+
+      expect(error).toMatchObject({
+        code: 'CONFIGURATION',
+        retryable: false,
+        httpStatus,
+        providerStatus,
+        diagnosticCode,
+        message: 'LLM provider error: CONFIGURATION',
+      });
+      expect(JSON.stringify(error)).not.toContain(providerMessage);
+      expect(JSON.stringify(error)).not.toContain('constructor-secret-not-real');
+    }
+  );
 });
 
 describe('provider error normalization', () => {
@@ -119,8 +171,9 @@ describe('provider error normalization', () => {
     expect(normalizeProviderError(error)).toMatchObject({
       code: 'RATE_LIMITED',
       retryable: true,
-      status: 429,
+      httpStatus: 429,
       retryAfterMs: 12_000,
+      diagnosticCode: 'RATE_LIMIT_REACHED',
     });
   });
 
@@ -132,6 +185,8 @@ describe('provider error normalization', () => {
     expect(normalizeProviderError({ status: 404 })).toMatchObject({
       code: 'CONFIGURATION',
       retryable: false,
+      httpStatus: 404,
+      diagnosticCode: 'RESOURCE_NOT_FOUND',
     });
   });
 });

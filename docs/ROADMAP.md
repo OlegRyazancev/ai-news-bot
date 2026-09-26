@@ -19,7 +19,7 @@
 
 - **Текущий этап:** 4. LLM-обработка
 - **Подтверждено:** provider-independent pipeline, MockProvider и PostgreSQL state/retry/concurrency paths проверены автоматически; Gemini runtime ещё не подтверждён.
-- **Следующий крупный milestone:** выполнить реальную `gemini-2.5-flash-lite` обработку и ручную приёмку этапа 4.
+- **Следующий крупный milestone:** выполнить успешную `gemini-3.5-flash-lite` обработку и ручную приёмку этапа 4.
 
 ## 0. Foundation / базовая инфраструктура
 
@@ -95,7 +95,7 @@
 - Суммаризация статей.
 - Оценка важности и тематическая классификация.
 
-**Зависимости:** Этап 3; решение выполнено — Google Gemini (`gemini-2.5-flash-lite`) через provider-independent abstraction.
+**Зависимости:** Этап 3; решение выполнено — Google Gemini (`gemini-3.5-flash-lite`) через provider-independent abstraction.
 
 ## 5. Ежедневный дайджест
 
