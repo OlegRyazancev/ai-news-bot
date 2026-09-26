@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment и PostgreSQL-backed processor реализованы. Дополнительное hardening сохраняет FAILED retry policy при quota race и best-effort освобождает claim после quota/startAttempt infrastructure errors; новые PostgreSQL regressions ожидают CI. Реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
+**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment и PostgreSQL-backed processor реализованы. Сохранение FAILED retry policy при quota race и best-effort claim release после quota/startAttempt infrastructure errors подтверждены CI. Реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
 
 ## Статус проверки
 
@@ -24,7 +24,7 @@
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
 | Gemini API                   | ❌ Not Runtime-Verified | Реальный API key и `gemini-2.5-flash-lite` ещё не запускались                                 |
-| Tests                        | 🟡 Partial          | 45 unit tests проходят локально; suite расширен до 12 PostgreSQL integration tests и ожидает текущий CI |
+| Tests                        | ✅ Verified         | 45 unit tests проходят локально и в CI; 12 PostgreSQL integration tests проходят в GitHub Actions |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -79,19 +79,19 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Реализованы два дополнительных review edge case: корректное восстановление FAILED после quota race и best-effort release после reserve/startAttempt infrastructure errors; новый CI gate ожидается.
+Реализованы и подтверждены CI два дополнительных review edge case: корректное восстановление FAILED после quota race и best-effort release после reserve/startAttempt infrastructure errors.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Подтвердить 12 PostgreSQL integration tests в GitHub Actions CI
-2. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
-3. Выполнить targeted runtime-проверку и ручную приёмку Stage 4
+1. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
+2. Выполнить targeted runtime-проверку `gemini-2.5-flash-lite` на одной выбранной статье
+3. Провести ручную приёмку polling/collection/processor
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
 npm run test      ✅ 45 unit tests
-npm run test:integration 🟡 12 tests реализованы; локальная PostgreSQL/Docker недоступна, ожидается CI
+npm run test:integration ✅ 12 PostgreSQL integration tests в GitHub Actions
 npx prisma generate   ✅
 npx prisma validate   ✅
 npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service
