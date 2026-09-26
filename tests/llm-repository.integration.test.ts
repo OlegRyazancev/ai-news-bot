@@ -564,6 +564,113 @@ describe('PrismaLlmArticleRepository integration', () => {
     });
   });
 
+  it('blocks targeted FAILED retry at the daily limit without changing the article or calling the provider', async () => {
+    const providerId = `targeted-daily-limit-${randomUUID()}`;
+    quotaProviders.push(providerId);
+    const article = await createArticle();
+    const attemptedAt = new Date('2026-09-26T14:25:00.517Z');
+    const retryAt = new Date('2026-09-26T14:26:00.517Z');
+    await client.newsArticle.update({
+      where: { id: article.id },
+      data: {
+        llmStatus: LlmProcessingStatus.FAILED,
+        llmAttemptCount: 1,
+        llmNextRetryAt: retryAt,
+        llmLastError: 'TIMEOUT',
+        llmLastAttemptProvider: providerId,
+        llmLastAttemptModel: 'gemini-3.5-flash-lite',
+        llmLastAttemptAt: attemptedAt,
+      },
+    });
+    const before = await client.newsArticle.findUniqueOrThrow({ where: { id: article.id } });
+    const now = new Date('2026-09-26T14:30:00.000Z');
+    const quota = new PrismaLlmRequestQuota(client, providerId, 'gemini-3.5-flash-lite', 1);
+    await expect(quota.reserve(now)).resolves.toMatchObject({ reserved: true, reservedRequests: 1 });
+    let providerCalls = 0;
+    const mockProvider = new MockProvider('gemini-3.5-flash-lite');
+    const provider: LlmProvider = {
+      id: providerId,
+      model: mockProvider.model,
+      enrich: input => {
+        providerCalls += 1;
+        return mockProvider.enrich(input);
+      },
+    };
+    const processor = new LlmProcessor(
+      repository,
+      provider,
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        requestQuota: quota,
+        now: () => now,
+      }
+    );
+
+    await expect(
+      processor.processArticle(article.id, { retryFailed: true })
+    ).resolves.toMatchObject({
+      claimedCount: 0,
+      skipped: true,
+      pauseReason: 'DAILY_LIMIT',
+      pausedUntil: new Date('2026-09-27T00:00:00.000Z'),
+    });
+    expect(providerCalls).toBe(0);
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toEqual(
+      before
+    );
+  });
+
+  it('blocks targeted processing during a persisted provider pause without an attempt or provider call', async () => {
+    const providerId = `targeted-provider-pause-${randomUUID()}`;
+    quotaProviders.push(providerId);
+    const article = await createArticle();
+    const now = new Date('2026-09-26T15:00:00.000Z');
+    const pausedUntil = new Date('2026-09-26T15:30:00.000Z');
+    const quota = new PrismaLlmRequestQuota(client, providerId, 'gemini-3.5-flash-lite', 5);
+    await quota.pauseUntil(pausedUntil, now);
+    const before = await client.newsArticle.findUniqueOrThrow({ where: { id: article.id } });
+    let providerCalls = 0;
+    const mockProvider = new MockProvider('gemini-3.5-flash-lite');
+    const provider: LlmProvider = {
+      id: providerId,
+      model: mockProvider.model,
+      enrich: input => {
+        providerCalls += 1;
+        return mockProvider.enrich(input);
+      },
+    };
+    const processor = new LlmProcessor(
+      repository,
+      provider,
+      { info: () => undefined, warn: () => undefined, error: () => undefined },
+      {
+        batchSize: 1,
+        maxAttempts: 3,
+        retryBaseDelayMs: 1000,
+        retryMaxDelayMs: 60_000,
+        staleProcessingMs: 60_000,
+        requestQuota: quota,
+        now: () => now,
+      }
+    );
+
+    await expect(processor.processArticle(article.id)).resolves.toMatchObject({
+      claimedCount: 0,
+      skipped: true,
+      pauseReason: 'PROVIDER_PAUSE',
+      pausedUntil,
+    });
+    expect(providerCalls).toBe(0);
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toEqual(
+      before
+    );
+  });
+
   it('preserves permanent FAILED retry policy when quota is exhausted after availability check', async () => {
     const providerId = `quota-race-${randomUUID()}`;
     quotaProviders.push(providerId);

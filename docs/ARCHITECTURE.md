@@ -14,11 +14,11 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED; CI-VERIFIED (53 unit + 17 PostgreSQL integration tests) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED (58 unit + 19 PostgreSQL integration tests verified locally; current CI pending) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
-| LLM SDK | `@google/genai` | 2.24.0 (exact pin; Node.js 20 compatible) | IMPLEMENTED; GEMINI RUNTIME NOT YET VERIFIED |
+| LLM SDK | `@google/genai` | 2.24.0 (exact pin; Node.js 20 compatible) | IMPLEMENTED; GEMINI RUNTIME-VERIFIED |
 
 ## Структура проекта
 
@@ -233,7 +233,7 @@ docker-compose logs -f bot
 | `npm run lint` | ESLint check |
 | `npm run test` | Vitest unit tests |
 | `npm run test:integration` | PostgreSQL integration tests |
-| `npm run llm:process-article -- <id> [--reprocess \| --retry-failed]` | Targeted processing: обычная eligible статья, reprocess `COMPLETED` или explicit retry `FAILED` |
+| `npm run llm:process-article -- <id> [--reprocess \| --retry-failed]` | Targeted processing: обычная eligible статья, reprocess `COMPLETED` или explicit retry `FAILED`; CLI различает eligibility, daily limit, provider pause и infrastructure/claim failures |
 
 ## UNKNOWN / Undetermined
 

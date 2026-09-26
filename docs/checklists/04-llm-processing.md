@@ -49,7 +49,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Выбрано dedicated хранение LLM-результатов и метаданных без изменения RSS-полей.
 - [x] Официальная документация подтверждает stable model ID `gemini-3.5-flash-lite`, совместимость с `models.generateContent`, structured outputs и используемым JSON Schema subset.
 - [x] Пользователь создал Gemini API key и добавил его только в локальный `.env`; секрет не выводится и не коммитится.
-- [ ] Пользователь проверил доступные конкретному Google AI Studio project RPM/TPM/RPD и региональную доступность; опубликованные лимиты не считаются гарантированными.
+- [x] Пользователь проверил доступные конкретному Google AI Studio project RPM/TPM/RPD и региональную доступность; опубликованные лимиты не считаются гарантированными.
 - [x] До установки выбрать и зафиксировать актуальную Node.js 20-совместимую версию `@google/genai`; зафиксирована точная версия `2.24.0`.
 
 ## Реализация
@@ -107,14 +107,23 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Модель по умолчанию изменена с ограниченной для нового project Gemini 2.5 на стабильную `gemini-3.5-flash-lite`.
 - [x] По официальной документации подтверждены `@google/genai`/`models.generateContent`, structured outputs и keywords существующей JSON Schema.
 
+### Исправление targeted-диагностики после реального timeout
+
+- [x] Пользователь подтвердил реальный `TIMEOUT` при targeted обработке статьи №15: запись получила `FAILED`, а retry был отложен до `2026-09-26T14:26:00.517Z`.
+- [x] Пользователь подтвердил достижение внутреннего дневного бюджета 5/5 и блокировку повторной команды `--retry-failed` до `2026-09-27T00:00:00.000Z` без обращения к Gemini.
+- [x] CLI больше не подменяет `DAILY_LIMIT` или persisted provider pause сообщением `ARTICLE_NOT_ELIGIBLE`; безопасная диагностика различает `ARTICLE_NOT_ELIGIBLE`, `DAILY_LIMIT`, `PROVIDER_PAUSED` и остальные существующие причины.
+- [x] Для глобального ограничения CLI выводит безопасное время возобновления; quota reservation, retry/backoff и состояние статьи при pre-claim skip не изменены.
+- [x] Добавлены unit и PostgreSQL regression tests для targeted daily limit/provider pause, истинной ineligible статьи, `FAILED + --retry-failed` и отсутствия provider call/новой попытки.
+- [ ] Успешный ручной retry статьи №15 после `TIMEOUT` и снятия дневного ограничения не подтверждён.
+
 ## 1. Что тестирует агент
 
 ### Build Verification
 
 - [x] `npm run build` проходит.
 - [x] `npm run lint` проходит.
-- [x] `npm run test` проходит: 53 unit tests.
-- [x] `npm run test:integration` проходит локально и в GitHub Actions: 17 PostgreSQL integration tests.
+- [x] `npm run test` проходит локально: 58 unit tests; текущий CI ожидается.
+- [x] `npm run test:integration` проходит локально: 19 PostgreSQL integration tests; текущий CI ожидается.
 - [x] `npx prisma generate` проходит.
 - [x] `npx prisma validate` проходит.
 - [x] Docker image `ai-news-bot:stage4` собирается; `.dockerignore` исключает локальные secrets и dev artifacts.
@@ -147,6 +156,8 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] Недоступность provider (`TEMPORARY`/HTTP 503 через `MockProvider`) сохраняет delayed retry metadata и не останавливает обработку других статей batch.
 - [x] PostgreSQL completion сохраняет исходные RSS `summary`, `content`, `topics` и `relevance` без изменений.
 - [x] Targeted processing одной статьи не изменяет ни одно поле другой статьи.
+- [x] Targeted CLI regression: `DAILY_LIMIT` и `PROVIDER_PAUSED` имеют приоритет над eligibility-сообщением и содержат безопасный `pausedUntil`.
+- [x] PostgreSQL regression: pre-claim global pause не изменяет status, attempt count или metadata targeted статьи и не вызывает provider.
 
 ## 2. Что пользователь тестирует вручную
 
@@ -154,10 +165,10 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 - [x] Создать API key в Google AI Studio и сохранить только в локальном `.env` как `GEMINI_API_KEY`; не отправлять key в чат и не коммитить.
 - [x] Успешный runtime вызов подтвердил доступность `gemini-3.5-flash-lite` для выбранного project.
-- [ ] В Google AI Studio отдельно проверить конкретные project RPM/TPM/RPD; внутренний дневной budget приложения не заменяет эту проверку.
+- [x] В Google AI Studio отдельно проверить конкретные project RPM/TPM/RPD; внутренний дневной budget приложения не заменяет эту проверку.
 - [x] Успешная обработка статьи №11 подтвердила доступную PostgreSQL, актуальную схему и наличие содержательной статьи.
-- [ ] Перед повторной ручной проверкой убедиться, что не запущен другой экземпляр бота.
-- [ ] Установить `LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.5-flash-lite`, `LLM_PROCESSING_ENABLED=false` и небольшой batch size согласно обновлённой `.env.example`.
+- [x] Перед повторной ручной проверкой убедиться, что не запущен другой экземпляр бота.
+- [x] Установить `LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.5-flash-lite`, `LLM_PROCESSING_ENABLED=false` и небольшой batch size согласно обновлённой `.env.example`.
 
 ### Пошаговая проверка и ожидаемые результаты
 

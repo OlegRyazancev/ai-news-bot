@@ -200,7 +200,7 @@ npm run llm:process-article -- <id> [--reprocess | --retry-failed] # Явная 
    ```bash
    npm run llm:process-article -- <article-id>
    ```
-   Для намеренной повторной обработки только этой завершённой статьи добавь `--reprocess`. Для явного повтора `FAILED` после исправления auth/config используй `--retry-failed`; автоматический retry постоянных ошибок не включается.
+   Для намеренной повторной обработки только этой завершённой статьи добавь `--reprocess`. Для явного повтора `FAILED` после исправления auth/config используй `--retry-failed`; автоматический retry постоянных ошибок не включается. Targeted CLI различает `ARTICLE_NOT_ELIGIBLE`, `DAILY_LIMIT`, `PROVIDER_PAUSED` и другие безопасные причины отказа; при глобальном ограничении выводится время возобновления без дополнительного provider call.
 5. После проверки можно включить фоновый processor: `LLM_PROCESSING_ENABLED=true`.
 
 `llmProvider`, `llmModel`, `llmProcessedAt` и token usage описывают последний успешный enrichment. `llmLastAttemptProvider`, `llmLastAttemptModel`, `llmLastAttemptAt`, status и error описывают последнюю попытку. Поэтому неуспешный reprocess не приписывает старый результат новой модели.

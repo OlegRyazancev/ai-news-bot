@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / Stage 4 LLM Processing In Progress** — Реальная статья №11 успешно обработана `gemini-3.5-flash-lite`; результаты сохранены, повторный claim `COMPLETED` исключён. Совместные polling, RSS collection, startup/scheduled LLM cycles, `/latest`, дневной budget и graceful shutdown подтверждены пользователем. Остались только отдельные ручные checklist-пункты перед закрытием этапа.
+**Pre-MVP / Stage 4 LLM Processing In Progress** — Реальная статья №11 успешно обработана `gemini-3.5-flash-lite`. Для статьи №15 подтверждён реальный `TIMEOUT`, persisted retry и блокировка explicit retry при дневном лимите 5/5 до обращения к Gemini. Targeted CLI теперь различает eligibility и глобальные ограничения. Остались отдельные ручные checklist-пункты перед закрытием этапа.
 
 ## Статус проверки
 
@@ -24,7 +24,7 @@
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
 | Gemini API                   | ✅ Runtime-Verified | Статья №11 успешно обработана `gemini-3.5-flash-lite`; structured result и persistence подтверждены пользователем |
-| Tests                        | ✅ CI-Verified      | 53 unit и 17 PostgreSQL integration tests проходят локально и в GitHub Actions |
+| Tests                        | 🟡 Pending CI       | 58 unit и 19 PostgreSQL integration tests проходят локально; текущий CI ожидается |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -62,12 +62,14 @@
 - Модель по умолчанию `gemini-3.5-flash-lite`; stable model ID, structured outputs и используемый JSON Schema subset подтверждены официальной документацией
 - MockProvider acceptance matrix: missing key, configuration recovery, provider unavailable, RSS preservation и targeted isolation
 - Targeted processing одной явной статьи через `npm run llm:process-article`
+- Безопасная targeted CLI-диагностика для `ARTICLE_NOT_ELIGIBLE`, `DAILY_LIMIT`, `PROVIDER_PAUSED`, overlap, infrastructure и claim failures
 - PostgreSQL integration tests и CI PostgreSQL service
 
 ## Не реализовано / не подтверждено
 
 - Отдельное подтверждение Google AI Studio project RPM/TPM/RPD
 - Несколько точечных ручных пунктов безопасности/metadata из checklist Stage 4
+- Успешный ручной retry статьи №15 после реального `TIMEOUT` и снятия дневного ограничения
 - Генерация ежедневного дайджеста + шедулер
 - Детекция и доставка breaking news
 - Управление закреплённым сообщением-шпаргалкой
@@ -82,7 +84,7 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Успешная Gemini 3.5 обработка статьи №11 и совместная работа runtime подтверждены пользователем; финальные edge cases закрыты MockProvider/unit/PostgreSQL tests и успешным GitHub Actions CI.
+Исправлена misleading targeted CLI-диагностика после реального `TIMEOUT` статьи №15 и исчерпания дневного бюджета 5/5; новые unit/PostgreSQL regression tests проходят локально, текущий CI ожидается.
 
 ## Следующие рекомендуемые шаги (NOW)
 1. Закрыть оставшиеся точечные ручные пункты checklist Stage 4
@@ -92,8 +94,8 @@
 ```
 npm run build     ✅
 npm run lint      ✅
-npm run test      ✅ 53 unit tests
-npm run test:integration ✅ 17 PostgreSQL integration tests локально и в GitHub Actions
+npm run test      ✅ 58 unit tests
+npm run test:integration ✅ 19 PostgreSQL integration tests локально; текущий CI ожидается
 npx prisma generate   ✅
 npx prisma validate   ✅
 npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service
