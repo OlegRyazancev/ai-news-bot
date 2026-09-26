@@ -354,9 +354,11 @@ describe('PrismaLlmArticleRepository integration', () => {
       }
     );
 
-    await expect(retryProcessor.run('scheduled')).resolves.toMatchObject({
-      claimedCount: 0,
-      completedCount: 0,
+    await retryProcessor.run('scheduled');
+    await expect(client.newsArticle.findUniqueOrThrow({ where: { id: article.id } })).resolves.toMatchObject({
+      llmStatus: LlmProcessingStatus.FAILED,
+      llmLastError: 'AUTHENTICATION',
+      llmNextRetryAt: null,
     });
 
     await expect(
