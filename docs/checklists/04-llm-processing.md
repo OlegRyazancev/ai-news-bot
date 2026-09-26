@@ -98,7 +98,7 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 - [x] `npm run build` проходит.
 - [x] `npm run lint` проходит.
 - [x] `npm run test` проходит: 41 unit tests.
-- [ ] `npm run test:integration`: suite расширен до 10 PostgreSQL integration tests; локальный запуск заблокирован недоступной PostgreSQL/Docker, требуется GitHub Actions CI.
+- [x] `npm run test:integration` проходит в GitHub Actions: 10 PostgreSQL integration tests; локальный запуск недоступен из-за остановленной PostgreSQL/Docker.
 - [x] `npx prisma generate` проходит.
 - [x] `npx prisma validate` проходит.
 - [x] Docker image `ai-news-bot:stage4` собирается; `.dockerignore` исключает локальные secrets и dev artifacts.
@@ -107,13 +107,13 @@ Checklist этапа **4. LLM-обработка**. Канонические ц�
 
 ### Runtime Verification
 
-- [ ] Review-версия Prisma-схемы применяется через `npx prisma db push`; локальный запуск заблокирован недоступной PostgreSQL/Docker, требуется GitHub Actions CI.
+- [x] Review-версия Prisma-схемы успешно применена через `npx prisma db push` к PostgreSQL service в GitHub Actions; локальный PostgreSQL/Docker недоступен.
 - [x] С `MockProvider` реальная тестовая статья в PostgreSQL проходит persist-first pipeline до `COMPLETED`, а dedicated поля и metadata записываются без изменения RSS `summary`/`topics`/`relevance`.
 - [ ] Mock-сценарии invalid response, timeout, retryable/429 и non-retryable error приводят к ожидаемым retry/status/attempt metadata и не останавливают batch.
 - [x] Stale `PROCESSING` запись доступна для безопасного повторного запуска; результат старого claim token отклоняется.
 - [x] Два пересекающихся processor claims не получают одну статью; атомарность подтверждена PostgreSQL integration test.
 - [x] Mocked 429 переводит запись в отложенное состояние и не вызывает tight retry loop; `Retry-After` учитывается в допустимых границах.
-- [ ] PostgreSQL integration: persisted provider pause переживает restart, дневной budget резервируется атомарно и безопасно сбрасывается на следующем UTC-дне (ожидается CI).
+- [x] PostgreSQL integration: persisted provider pause переживает restart, дневной budget резервируется атомарно и безопасно сбрасывается на следующем UTC-дне.
 - [x] Mocked permanent auth/config error не получает автоматический retry и останавливает in-process worker до перезапуска.
 - [ ] С локальным `GEMINI_API_KEY` выполнен реальный запрос к стабильной `gemini-2.5-flash-lite`; structured output проходит Zod-валидацию.
 - [ ] Для реальной сохранённой статьи Gemini записывает осмысленные summary, importance и topics, provider/model, processed timestamp и доступные token counts.

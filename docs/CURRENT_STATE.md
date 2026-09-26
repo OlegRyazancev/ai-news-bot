@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment, Gemini/Mock adapters и независимый PostgreSQL-backed processor реализованы. Review-hardening добавляет persisted quota/pause, изоляцию фоновых ошибок, корректную reprocess metadata и explicit FAILED retry; новые PostgreSQL tests ожидают CI. Реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
+**Pre-MVP / Stage 4 LLM Processing In Progress** — Provider-independent enrichment, Gemini/Mock adapters и независимый PostgreSQL-backed processor реализованы. Persisted quota/pause, изоляция фоновых ошибок, корректная reprocess metadata и explicit FAILED retry подтверждены CI; реальная `gemini-2.5-flash-lite` runtime-проверка и ручная приёмка ещё не выполнены.
 
 ## Статус проверки
 
@@ -10,7 +10,7 @@
 | TypeScript Build             | ✅ Verified         | `npm run build` проходит                                                                        |
 | ESLint                       | ✅ Verified         | `npm run lint` проходит                                                                         |
 | Prisma Client Generation     | ✅ Verified         | `npx prisma generate` проходит                                                                  |
-| Database Connection          | 🟡 Partial          | Base schema runtime-verified ранее; review schema локально не применена из-за недоступной PostgreSQL, ожидается CI |
+| Database Connection          | ✅ CI-Verified      | Base schema runtime-verified ранее; review schema успешно применена к PostgreSQL service в GitHub Actions |
 | Database Migrations          | ❌ Not Created      | `prisma migrate` не запускался (использовался `db push`)                                        |
 | Bot Startup (polling)        | ✅ Runtime-Verified | `npm run dev` дошёл до polling; авторизация Telegram API через `getMe` успешна                  |
 | Telegram Commands            | ✅ Runtime-Verified | `/start`, `/help`, `/settings`, `/latest`, fallback и повторный запуск проверены пользователем  |
@@ -24,7 +24,7 @@
 | LLM Provider Layer           | ✅ Build-Verified   | `LlmProvider`, Gemini/Mock, structured JSON + Zod, timeout/error mapping                         |
 | LLM PostgreSQL Processing    | ✅ Integration-Verified | Atomic claim, stale recovery, idempotent writes, delayed retry и Mock metadata проверены в PostgreSQL |
 | Gemini API                   | ❌ Not Runtime-Verified | Реальный API key и `gemini-2.5-flash-lite` ещё не запускались                                 |
-| Tests                        | 🟡 Partial          | 41 unit tests проходят локально; 10 PostgreSQL integration tests не запущены локально из-за недоступной PostgreSQL и ожидают CI |
+| Tests                        | ✅ Verified         | 41 unit test проходит локально и в CI; 10 PostgreSQL integration tests проходят в GitHub Actions |
 
 ## Реализовано (Код есть, Build-Verified)
 
@@ -77,22 +77,22 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Исправлены четыре review-блока Stage 4: global 429/quota, фоновая изоляция, reprocess metadata и manual FAILED retry; unit gate пройден, новый PostgreSQL/CI gate ожидается.
+Исправлены и подтверждены CI четыре review-блока Stage 4: global 429/quota, фоновая изоляция, reprocess metadata и manual FAILED retry.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Подтвердить 10 PostgreSQL integration tests в GitHub Actions CI
-2. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
-3. Выполнить targeted runtime-проверку `gemini-2.5-flash-lite` и ручную приёмку
+1. Получить Gemini API key и проверить project-specific free-tier limits в Google AI Studio
+2. Выполнить targeted runtime-проверку `gemini-2.5-flash-lite` на одной выбранной статье
+3. Провести ручную приёмку polling/collection/processor
 
 ## Последние успешные команды
 ```
 npm run build     ✅
 npm run lint      ✅
 npm run test      ✅ 41 unit tests
-npm run test:integration 🟡 10 tests реализованы; локальная PostgreSQL/Docker недоступна, ожидается CI
+npm run test:integration ✅ 10 PostgreSQL integration tests в GitHub Actions
 npx prisma generate   ✅
 npx prisma validate   ✅
-npx prisma db push    🟡 review schema: локально P1001, ожидается CI
+npx prisma db push    ✅ review schema применена в GitHub Actions PostgreSQL service
 npm run dev           ✅ polling startup
 Telegram API getMe    ✅
 Prisma SELECT 1       ✅

@@ -14,7 +14,7 @@
 | Environment | dotenv | ^16.4.5 | IMPLEMENTED |
 | Dev Runtime | tsx | ^4.7.0 | IMPLEMENTED |
 | Linting | ESLint + TypeScript ESLint | ^8.56.0 / ^7.0.0 | IMPLEMENTED |
-| Testing | Vitest | ^1.2.0 | IMPLEMENTED (41 unit + 10 PostgreSQL integration tests; новые integration tests ожидают CI) |
+| Testing | Vitest | ^1.2.0 | IMPLEMENTED; CI-VERIFIED (41 unit + 10 PostgreSQL integration tests) |
 | Containerization | Docker / Docker Compose | — | IMPLEMENTED |
 | Feed Parsing | rss-parser | ^3.13.0 | IMPLEMENTED; RUNTIME-VERIFIED |
 | Scheduler | node-cron | ^4.6.0 | IMPLEMENTED; RUNTIME-VERIFIED |
@@ -86,7 +86,7 @@ src/index.ts
 | `UserPreferences` | Настройки уведомлений | `/start` CREATE IF MISSING (runtime-verified) |
 | `Subscription` | Тематические подписки пользователя | DEFINED (unused) |
 | `NewsArticle` | Собранные статьи + dedicated LLM enrichment/state metadata | INSERT-ONLY RSS + LLM SCHEMA APPLIED; MOCK/POSTGRESQL INTEGRATION-VERIFIED |
-| `LlmProviderQuota` | UTC-дневной внутренний бюджет и provider-wide pause | IMPLEMENTED; POSTGRESQL VERIFICATION PENDING FOR REVIEW FIXES |
+| `LlmProviderQuota` | UTC-дневной внутренний бюджет и provider-wide pause | IMPLEMENTED; POSTGRESQL INTEGRATION-VERIFIED |
 | `NewsDigest` | История ежедневных дайджестов | DEFINED (unused) |
 
 **Key Relations:** User 1:1 Preferences, User 1:N Subscriptions, User 1:N Digests, Digests хранят массив ID статей.
@@ -96,7 +96,7 @@ src/index.ts
 | Интеграция | Библиотека | Статус |
 |-------------|---------|--------|
 | Telegram Bot API | grammY | RUNTIME-VERIFIED (polling) |
-| PostgreSQL | Prisma Client | BASE SCHEMA RUNTIME-VERIFIED; REVIEW SCHEMA ADDITIONS PENDING CI |
+| PostgreSQL | Prisma Client | BASE RUNTIME-VERIFIED; REVIEW SCHEMA ADDITIONS CI-VERIFIED |
 | LLM (суммаризация, классификация) | Provider-independent `LlmProvider`; `@google/genai` + Mock | IMPLEMENTED; MOCK/DB VERIFIED, GEMINI RUNTIME PENDING |
 | News Sources | Curated RSS mix (8 feeds) | RUNTIME-VERIFIED |
 | Scheduler | `node-cron` (embedded) | RUNTIME-VERIFIED |

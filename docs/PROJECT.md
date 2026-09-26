@@ -41,7 +41,7 @@
 - ✅ Runtime-Verified сбор и нормализация RSS/Atom из 8 согласованных AI/LLM-источников.
 - ✅ Runtime-Verified регулярный запуск через встроенный `node-cron` с защитой от перекрывающихся циклов.
 - ✅ Runtime-Verified insert-only сохранение собранных статей в PostgreSQL с дедупликацией по URL.
-- ✅ Integration-Verified независимая LLM-обработка сохранённых статей через MockProvider с atomic PostgreSQL claims и delayed retry; review-hardening добавляет persisted quota/pause и безопасный manual retry (новый CI gate ожидается).
+- ✅ Integration-Verified независимая LLM-обработка сохранённых статей через MockProvider с atomic PostgreSQL claims, delayed retry, persisted quota/pause и безопасным manual retry.
 - 🟡 Build-Verified Gemini adapter для summary, importance и topics; реальный Gemini API ещё не проверен.
 
 ## Основные ограничения
