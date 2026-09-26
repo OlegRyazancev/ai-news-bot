@@ -1,7 +1,7 @@
 # CURRENT_STATE.md
 
 ## Текущая фаза
-**Pre-MVP / Stage 4 LLM Processing In Progress** — Реальная статья №11 успешно обработана `gemini-3.5-flash-lite`, включая recovery через `--retry-failed` после `CONFIGURATION`. Для статьи №15 подтверждены реальный `TIMEOUT`, persisted retry и блокировка explicit retry при дневном лимите 5/5 до обращения к Gemini. Финальная ревизия не выявила оставшихся обязательных ручных проверок; статус этапа меняется только отдельным `/stage-close`.
+**Pre-MVP / Stage 4 LLM Processing Complete** — Provider-independent pipeline, Gemini adapter, PostgreSQL processing reliability, quota/pause semantics и targeted CLI завершены. Реальная статья №11 успешно обработана `gemini-3.5-flash-lite`; для статьи №15 подтверждены `TIMEOUT`, persisted retry и pre-provider блокировка дневным лимитом. Следующий запланированный этап — 5. Ежедневный дайджест.
 
 ## Статус проверки
 
@@ -81,10 +81,12 @@
 - Exactly-once для внешнего LLM API не гарантируется; после неопределённого сбоя запрос может повториться, при этом DB writes защищены claim token
 
 ## Последняя выполненная работа
-Финальная ревизия Stage 4 сопоставила runtime-факты пользователя с отдельными unit/PostgreSQL доказательствами; лишнее требование успешного retry именно статьи №15 удалено, обязательных ручных проверок не осталось.
+Stage 4 закрыт после успешных локальных проверок, runtime/manual acceptance, repository-wide документационного аудита и CI preliminary HEAD; финальный completion commit подтверждается обязательным CI перед Ready for review.
 
 ## Следующие рекомендуемые шаги (NOW)
-1. Только по отдельной явной команде пользователя выполнить `/stage-close`; текущий этап и PR остаются открытыми.
+1. Выполнить ручной review и **Squash and merge** PR №3.
+2. После merge синхронизировать локальный `main` через безопасный fast-forward.
+3. Начать этап 5 командой `/stage-start` только от актуального `main`.
 
 ## Последние успешные команды
 ```
