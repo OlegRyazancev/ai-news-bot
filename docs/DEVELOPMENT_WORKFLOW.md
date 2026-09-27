@@ -118,6 +118,20 @@ Build Verification не заменяет Runtime Verification.
 
 Если найден дефект, затронутые acceptance-пункты открываются повторно. После исправления заново выполняются применимые local/runtime/CI проверки, пользовательский retest, документационный аудит и diff review.
 
+### Предварительный Architect
+
+`/architect` используется до реализации значимого изменения, когда нужно проверить архитектурные границы, применимость существующих ADR, конкурентность, асинхронные потоки, внешние интеграции, partial failures или необходимость нового решения. Для локальной implementation detail, уже полностью покрытой действующим решением, и для обычного code review Architect не вызывается; Reviewer остаётся отдельной ролью после реализации.
+
+Команда выполняется в текущей Developer-сессии (`subagent: false`) и запускает project agent из `.opencode/agents/architect.md` только в foreground. Architect анализирует и консультирует, не пишет код, не изменяет проект, не запускает shell/tests/API и не принимает решение за пользователя. Agent использует deny-by-default read-only permissions, Primary `google/gemini-3.5-flash` и лимит `8` model steps.
+
+Developer до вызова выполняет security preflight, один раз сериализует компактный `architecture_payload` и передаёт задачу, ограничения, вопросы, краткий контекст и manifest только необходимых project-relative файлов с SHA-256. Полное содержимое больших документов по умолчанию не передаётся; Architect читает нужные разрешённые manifest-пути. Fallback ограничен тремя новыми foreground child sessions: `google/gemini-3.5-flash` → `google/gemini-3.5-flash-lite` → `openai/gpt-5.6-luna-fast`. Переключение разрешено только по однозначной structured allowlisted quota/provider/transport error; содержательная неполнота, `ARCHITECTURE_CONTEXT_REQUIRED`, auth/unknown error или immutable-context violation останавливают цепочку. Luna Fast допускается только через подтверждённое существующее account-based OAuth-подключение.
+
+Architecture Decision Gate открывается только при новом существенном выборе: решение отсутствует, новое требование или ограничение конфликтует с действующим ADR либо применимость решения нельзя установить из проверенного контекста. Если действующее решение покрывает задачу и новых оснований для выбора нет, отчёт прямо фиксирует, что новый gate не требуется, и не просит пользователя повторно согласовать уже принятое решение. Developer дополнительно проверяет, что при partial failures гарантии приложения, PostgreSQL и внешних систем разделены, а best-effort release/recovery не назван гарантированным восстановлением.
+
+**Подтверждено runtime:** отдельный model-override тест `google/gemini-3.5-flash-lite` успешно выполнил read-only анализ за 3 model steps. Сквозной `/architect` тест получил structured `provider.quota`/HTTP `429` на Primary и штатно завершился на Fallback 1; Luna не вызывалась. Компактный explicit payload имел размер `3155` UTF-8 bytes и SHA-256 `6582ccd818688fb433c79d3da115d94c11cc7d67b9c57ccbbfc49e2856a03d6d`; persisted explicit prompt обеих попыток имел тот же размер и hash, а полные persisted user messages с автоматическим префиксом OpenCode также совпали.
+
+**Технические ограничения:** это bounded orchestration Developer, а не нативный fallback OpenCode. Markdown-команда не получает immutable prompt object, а API не раскрывает exact provider HTTP request bytes или полный скрытый runtime/system context; поэтому подтверждена идентичность persisted OpenCode prompt, но не provider transport и не всего runtime-контекста. Проверка persisted prompt после вызова обнаруживает расхождение, но не предотвращает уже выполненную отправку. Permissions нельзя динамически сузить до manifest, security scan эвристический, manifest hash не создаёт атомарный filesystem snapshot, а прочитанный Architect файл может измениться после preflight.
+
 ### Независимый Reviewer
 
 После реализации и локальных проверок Developer (`openai/gpt-5.6-sol#high`) запускает `/review`, передавая `pass`, краткий scope задачи, acceptance criteria, ограничения и фактические результаты verification. Поле команды `subagent: false` явно оставляет её в текущей Developer-сессии. Developer один раз фиксированными read-only Git-командами получает committed, staged, unstaged и точный untracked scope, формирует changed-files manifest, выполняет локальный security preflight, безопасно фиксирует содержимое untracked-файлов и создаёт единый immutable snapshot для всех model attempts. Потенциальный секрет, неполный, недоступный, truncated или слишком большой snapshot блокирует вызов до передачи внешней модели.
@@ -130,7 +144,7 @@ Project agent из `.opencode/agents/reviewer.md` запускается в fore
 
 **Изолированное испытание:** через интерфейс OpenCode создаётся отдельная Developer-сессия этого проекта, и `/review` запускается только в ней. Foreground Reviewer возвращает результат тестовой parent-сессии, поэтому основная рабочая Developer-сессия не получает synthetic result и не продолжает работу. Background-команда для этого не используется.
 
-**Фактическая verification:** все три модели прошли отдельные runtime-тесты с существующим Reviewer, включая сохранение agent permissions и model-step limit. Основной Primary-сценарий `/review` успешно проверен на полном changed scope. Автоматическое переключение при реальной ошибке провайдера пока не runtime-подтверждено; это bounded orchestration Developer, а не нативный гарантированный fallback OpenCode. Architect пока не реализован.
+**Фактическая verification:** все три модели прошли отдельные runtime-тесты с существующим Reviewer, включая сохранение agent permissions и model-step limit. Основной Primary-сценарий `/review` успешно проверен на полном changed scope. Автоматическое переключение Reviewer при реальной ошибке провайдера пока не runtime-подтверждено; это bounded orchestration Developer, а не нативный гарантированный fallback OpenCode.
 
 ## Закрытие stage и подготовка PR к review
 
@@ -196,11 +210,13 @@ Generated files, зависимости и секретный `.env` не вхо
 | `/stage-start` | Выбрать stage из roadmap, подготовить stage-ветку, анализ/checklist/план и STOP. |
 | `/stage-close` | Выполнить двухфазное закрытие с CI предварительного и финального HEAD, затем подготовить PR к Ready; не merge. |
 | `/handoff` | Оставить проверяемый контекст текущей ветки/PR для следующей сессии. |
+| `/architect` | До реализации foreground-запустить read-only Architect для значимого архитектурного вопроса и применимости Decision Gate. |
 | `/review` | В текущей Developer-сессии собрать статический Git scope и foreground запустить независимый read-only Reviewer. |
 
 ```text
 Не знаю, где остановился?       → /stage-status
 Начинаю новый stage?            → /stage-start
+Есть значимый архитектурный выбор? → /architect → решение/план без реализации
 Продолжаю stage?                → checklist → следующая задача → push → Draft PR
 Реализация и проверки готовы?  → /review → исправления → максимум два recheck
 Stage готов?                    → /stage-close
