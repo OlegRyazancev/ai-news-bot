@@ -27,12 +27,17 @@ opencode
 /stage-status
 → выполнить следующий пункт checklist
 → локальные проверки
+→ /review pass=initial task="..." acceptance="..." verification="..."
+→ исправить подтверждённые замечания и повторить проверки
+→ при необходимости /review pass=recheck-1|recheck-2 с finding ID и исправлениями
 → commit + push в stage-ветку
 → после первого meaningful push агент создаёт Draft PR в main
 → gh pr checks
 ```
 
-PR body ведётся по `.github/pull_request_template.md`. Ошибки локальных проверок и CI исправляются в той же stage-ветке.
+Developer на `openai/gpt-5.6-sol#high` передаёт Reviewer полный changed-files manifest и один immutable committed/staged/unstaged/untracked snapshot после локального security preflight. Reviewer работает без shell в foreground child: Primary — `google/gemini-3.8-flash`, затем только при подтверждённой provider error допускаются `google/gemini-3.5-flash-lite` и `openai/gpt-5.6-luna-fast` (не более трёх model attempts на один pass). Разрешены одно первоначальное ревью и максимум две сфокусированные повторные проверки.
+
+Все три модели отдельно runtime-проверены, а основной Primary-сценарий `/review` успешно прошёл на полном changed scope. Автоматическое переключение при реальной provider error пока не подтверждено; Architect не реализован. Reviewer не заменяет local/runtime/user/CI gates. PR body ведётся по `.github/pull_request_template.md`. Ошибки локальных проверок и CI исправляются в той же stage-ветке.
 
 ## Закрытие stage
 

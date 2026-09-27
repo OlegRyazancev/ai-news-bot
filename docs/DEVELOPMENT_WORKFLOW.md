@@ -118,6 +118,20 @@ Build Verification не заменяет Runtime Verification.
 
 Если найден дефект, затронутые acceptance-пункты открываются повторно. После исправления заново выполняются применимые local/runtime/CI проверки, пользовательский retest, документационный аудит и diff review.
 
+### Независимый Reviewer
+
+После реализации и локальных проверок Developer (`openai/gpt-5.6-sol#high`) запускает `/review`, передавая `pass`, краткий scope задачи, acceptance criteria, ограничения и фактические результаты verification. Поле команды `subagent: false` явно оставляет её в текущей Developer-сессии. Developer один раз фиксированными read-only Git-командами получает committed, staged, unstaged и точный untracked scope, формирует changed-files manifest, выполняет локальный security preflight, безопасно фиксирует содержимое untracked-файлов и создаёт единый immutable snapshot для всех model attempts. Потенциальный секрет, неполный, недоступный, truncated или слишком большой snapshot блокирует вызов до передачи внешней модели.
+
+Project agent из `.opencode/agents/reviewer.md` запускается в foreground с явным model override: Primary `google/gemini-3.8-flash`, Fallback 1 `google/gemini-3.5-flash-lite`, Fallback 2 `openai/gpt-5.6-luna-fast`. На один pass разрешено не более трёх попыток, каждая модель вызывается максимум один раз в новой child session с идентичным snapshot. Fallback выполняется только при подтверждённой allowlisted provider/transport error; обычный результат, `REVIEW_INCOMPLETE`, `INSUFFICIENT_REVIEW_CONTEXT`, auth/unknown error или недостаточные structured metadata останавливают цепочку. Reviewer сохраняет deny-by-default read-only permissions, не использует shell и ограничен 12 model steps; model override не меняет модель Developer.
+
+Разрешены одно первоначальное ревью (`initial`) и не более двух повторных проверок (`recheck-1`, `recheck-2`). Повторные проверки фокусируются на предыдущих findings и новых hunks. Developer проверяет замечания, исправляет подтверждённые проблемы, повторяет применимые локальные проверки и передаёт Reviewer ID замечаний и описание исправлений. Reviewer не заменяет build, tests, runtime/user verification, документационный gate или CI и не запускается рекурсивно.
+
+**Рабочий вызов:** Developer запускает `/review` в текущей рабочей сессии. Foreground child возвращает результат Developer, после чего тот оценивает findings и продолжает workflow; recheck автоматически не запускается.
+
+**Изолированное испытание:** через интерфейс OpenCode создаётся отдельная Developer-сессия этого проекта, и `/review` запускается только в ней. Foreground Reviewer возвращает результат тестовой parent-сессии, поэтому основная рабочая Developer-сессия не получает synthetic result и не продолжает работу. Background-команда для этого не используется.
+
+**Фактическая verification:** все три модели прошли отдельные runtime-тесты с существующим Reviewer, включая сохранение agent permissions и model-step limit. Основной Primary-сценарий `/review` успешно проверен на полном changed scope. Автоматическое переключение при реальной ошибке провайдера пока не runtime-подтверждено; это bounded orchestration Developer, а не нативный гарантированный fallback OpenCode. Architect пока не реализован.
+
 ## Закрытие stage и подготовка PR к review
 
 `/stage-close` выполняется в соответствующей `stage/NN-short-slug` ветке по двухфазной схеме.
@@ -182,11 +196,13 @@ Generated files, зависимости и секретный `.env` не вхо
 | `/stage-start` | Выбрать stage из roadmap, подготовить stage-ветку, анализ/checklist/план и STOP. |
 | `/stage-close` | Выполнить двухфазное закрытие с CI предварительного и финального HEAD, затем подготовить PR к Ready; не merge. |
 | `/handoff` | Оставить проверяемый контекст текущей ветки/PR для следующей сессии. |
+| `/review` | В текущей Developer-сессии собрать статический Git scope и foreground запустить независимый read-only Reviewer. |
 
 ```text
 Не знаю, где остановился?       → /stage-status
 Начинаю новый stage?            → /stage-start
 Продолжаю stage?                → checklist → следующая задача → push → Draft PR
+Реализация и проверки готовы?  → /review → исправления → максимум два recheck
 Stage готов?                    → /stage-close
 PR Ready for review?            → пользователь review → Squash and merge
 Начинаю следующую работу?       → обновить main → новая ветка
