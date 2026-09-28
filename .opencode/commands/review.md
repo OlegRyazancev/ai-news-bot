@@ -24,15 +24,25 @@ subagent: false
 | Current last completed pass | Следующий pass | Дополнительные условия |
 |---|---|---|
 | `none` | `initial` | implementation и применимая verification завершены |
-| `initial` | `recheck-1` | есть подтверждённые findings, внесены относящиеся к ним исправления и повторная verification успешна |
+| `initial` | `recheck-1` | есть подтверждённые Reviewer findings либо подтверждённые post-review runtime/acceptance defects со stable IDs; внесены относящиеся к ним исправления и повторная verification успешна |
 | `recheck-1` | `recheck-2` | остались подтверждённые findings, внесены новые исправления и повторная verification успешна |
 
 Любой другой переход запрещён. `Fallback` внутри pass не меняет transition, `Last completed pass` или counter. После `recheck-2` новый автоматический pass запрещён.
 
 - Не выполняй повторный `initial`, если state и freshness подтверждают уже завершённый актуальный `initial` или более поздний pass.
-- Recheck без подтверждённых исправлений, фактического изменения относящегося scope и успешной повторной verification запрещён.
+- Recheck без подтверждённых исправлений, фактического изменения относящегося scope и успешной повторной verification запрещён. Post-review defect должен иметь stable ID, проверяемое runtime/acceptance evidence и явное подтверждение Developer или пользователя; произвольное новое требование не становится finding этим путём.
 - Если ранее успешный review стал stale из-за новых substantive changes, которые не являются исправлениями подтверждённых findings, не маскируй их как recheck и не повторяй initial: сообщи отсутствие разрешённого transition и остановись.
 - Если pass уже подтверждён для актуального substantive scope, заверши без model call и без расходования recheck.
+
+### Переход для ORCH-FP-001 и ORCH-ENC-002
+
+Для текущего согласованного recovery lifecycle исторический `initial` остаётся завершённым с `findings: none`, `Remaining rechecks: 2`, а его unversioned fingerprint имеет только `freshness: unconfirmed`. Подтверждённые post-review acceptance defects `ORCH-FP-001` и `ORCH-ENC-002` разрешают после исправлений и успешной повторной verification ровно следующий `recheck-1`:
+
+- не запускай новый `initial` и не сбрасывай counters;
+- не присваивай historical hash schema `ai-news-bot/substantive-scope@1` задним числом;
+- передай оба stable defect ID, evidence, confirmed fixes и verification after fixes;
+- создай новый полный immutable `review_payload` и новую согласованную пару `review_payload_sha256` + v1 `substantive_scope_sha256` для всего актуального scope;
+- после успешного `recheck-1` установи `Remaining rechecks: 1`, сохранив historical initial identifiers отдельно как legacy evidence, а не как current reviewed revision.
 
 ## Фиксированный план одного pass
 
@@ -48,20 +58,20 @@ subagent: false
    ```
 
 4. Убедись, что результаты полные и не truncated. Сформируй `changed_files` manifest точных путей с категориями `committed`, `staged`, `unstaged`, `untracked`; один путь может входить в несколько категорий.
-5. Для category-independent freshness дополнительно выполни ровно по одному разу и сохрани полные raw outputs:
+5. Для immutable Reviewer payload дополнительно выполни ровно по одному разу и сохрани полные raw outputs:
 
    ```text
    git merge-base main HEAD
    git diff --raw -z --full-index --find-renames <review-base из предыдущей команды>
    ```
 
-   Первый output задаёт `review_base`; второй описывает итоговые tracked operations относительно этой базы независимо от index/worktree placement. Ошибка, truncated output, неоднозначная база или невозможность разобрать NUL-delimited raw metadata блокирует Reviewer.
-6. Выполни описанный ниже security preflight по manifest и уже сохранённым Git diff. До завершения path preflight не читай ни один untracked-файл и не хешируй содержимое изменённых файлов.
-7. После успешного path preflight построй normalized final-content manifest по разделу **«Freshness и scope revision»**. Хеширование exact bytes выполняй локально без вывода содержимого.
-8. Только для прошедших path preflight untracked-путей прочитай каждый точный небинарный файл ровно один раз через `read` и сохрани полный результат в памяти. Не используй `glob`, `grep` или дополнительные Git-команды для восстановления содержимого. Бинарный/special untracked-файл может получить content hash для freshness, но остаётся snapshot/security blocker и не передаётся Reviewer как непроверенное содержимое.
-9. Выполни content preflight для сохранённого содержимого untracked-файлов. При любом blocker остановись до вызова Reviewer.
-10. Один раз сформируй полный immutable `review_payload`: исходный контекст, acceptance criteria, ограничения, verification, для recheck — prior findings/fixes/reverification, manifest, сохранённые outputs исходных четырёх Git-команд, `review_base`, полный raw metadata output, normalized final-content manifest и полный map `untracked_files` вида `path -> captured content`. После формирования не пересобирай snapshot, не перечитывай файлы и не изменяй payload между model attempts.
-11. Рассчитай идентификаторы exact snapshot и substantive scope по разделу **«Freshness и scope revision»**. До model call остановись, если requested transition не соответствует state, pass уже актуально завершён либо freshness невозможно надёжно определить.
+   Первый output задаёт `review_base`; второй остаётся evidence в payload. Он не используется как отдельная реализация fingerprint. Ошибка, truncated output, неоднозначная база или невозможность разобрать NUL-delimited raw metadata блокирует Reviewer.
+6. Вызови `inspect` общего executable `.opencode/scripts/substantive-scope.mjs` со schema `ai-news-bot/substantive-scope@1` и точным `review_base`. `inspect` не читает file contents. Проверь schema, base, `inspection_sha256`, все paths и metadata; ошибка или malformed/unsupported output блокирует workflow.
+7. Выполни описанный ниже path preflight по exact inspect paths и уже сохранённым Git manifests/diffs. До его завершения не читай untracked-файлы и не вызывай `calculate`.
+8. Только для прошедших path preflight untracked-путей прочитай каждый точный небинарный файл ровно один раз через `read`, сохрани полный результат в памяти и выполни content preflight всех сохранённых diff/captured contents. Не используй `glob`, `grep` или дополнительные Git-команды для восстановления содержимого. Бинарный/special untracked-файл остаётся snapshot/security blocker. При любом blocker остановись до `calculate` и Reviewer.
+9. Только после полного успешного security preflight сформируй `approved_paths` как точный отсортированный path set из результата `inspect` без добавления, удаления или преобразования путей. Вызови `calculate` того же executable с той же schema/base, подтверждёнными `inspection_sha256`, `approved_paths` и approved canonical stage-checklist path либо `null`. При любом расхождении остановись fail-closed без model call или lifecycle transition.
+10. Один раз сформируй полный immutable `review_payload`: исходный контекст, acceptance criteria, ограничения, verification, для recheck — prior findings/fixes/reverification, manifest, сохранённые outputs исходных Git-команд, `review_base`, raw metadata output, возвращённый executable `normalized_final_content_manifest` и полный map `untracked_files` вида `path -> captured content`. После формирования не пересобирай snapshot, не перечитывай файлы и не изменяй payload между model attempts.
+11. Рассчитай `review_payload_sha256` из exact immutable payload; `substantive_scope_sha256` бери только из успешного результата v1 `calculate`. До model call остановись, если requested transition не соответствует state, pass уже актуально завершён либо freshness невозможно надёжно определить.
 12. Запусти описанную ниже цепочку непосредственно через один и тот же project agent `reviewer`. Каждый вызов выполняй в foreground, в новой child session, без `sessionID` предыдущей попытки и с явным model override. Не запускай другие subagents и не вызывай Markdown-команду `/review`.
 13. После успешного возврата примени quality/evidence gate и обнови task-level state по разделам ниже. Текущий вызов на этом заканчивается: не исправляй findings и не запускай recheck рекурсивно.
 
@@ -69,7 +79,7 @@ subagent: false
 
 ## Security preflight
 
-Security preflight выполняется локально в Developer до формирования `review_payload` и до любого вызова внешней модели. Он состоит из path preflight и content preflight.
+Security preflight выполняется локально в Developer после `inspect`, но до `calculate`, формирования `review_payload` и любого вызова внешней модели. Он состоит из path preflight и content preflight. Executable не является sandbox, не подтверждает безопасность содержимого и не заменяет эту проверку.
 
 ### Path preflight
 
@@ -111,7 +121,7 @@ Security preflight выполняется локально в Developer до ф�
 
 Исходные четыре Git output, два freshness-metadata output, manifests и captured untracked content образуют один snapshot текущего `pass`:
 
-- не запускай ни одну snapshot/freshness Git-команду повторно после её первого capture;
+- не запускай вручную ни одну snapshot Git-команду повторно после её первого capture; внутренние повторные Git inspections общего executable являются обязательной частью v1 TOCTOU/freshness contract и не пересобирают raw Reviewer snapshot;
 - каждый прошедший preflight untracked-файл прочитай ровно один раз и включи его полный captured content в `untracked_files`;
 - если файл исчез, недоступен, оказался каталогом/бинарным, output truncated или превышает доступный лимит, остановись с конкретным blocker;
 - если любой Git output или untracked content слишком велик для полной передачи, не сокращай и не разбивай snapshot между попытками — остановись;
@@ -121,30 +131,44 @@ Security preflight выполняется локально в Developer до ф�
 
 Неполный snapshot нельзя передавать Reviewer и нельзя использовать как основание для fallback.
 
-## Freshness и scope revision
+## Freshness и scope revision: единый executable contract
 
-Полный `review_payload` всегда содержит исходные Git snapshots и категории без исключений: служебный state не удаляется из payload и остаётся видимым Reviewer. Отдельная content-based нормализация применяется только для определения freshness после pass.
+Единственная реализация content-based fingerprint — `.opencode/scripts/substantive-scope.mjs`, schema `ai-news-bot/substantive-scope@1`. `/review`, `/start`, `/stage-status`, `/handoff` и `/stage-close` обязаны вызывать этот файл; независимо воспроизводить serialization, path sorting, Git operations, normalization или hashing в Markdown запрещено.
 
-1. Построй `normalized_final_content_manifest` в лексикографическом порядке Git paths относительно сохранённого `review_base`, используя raw `--full-index --find-renames` metadata и точные untracked paths. Сериализуй его детерминированно как UTF-8 JSON с фиксированным порядком ключей, Git-style `/` paths, lowercase SHA-256 и без platform-dependent whitespace/line endings.
-2. Описывай не категорию или эвристику diff, а переход от base tree к итоговому tree. Для каждого base/final path сохрани canonical operation (`add`, `modify`, `delete`, `type-change`) и значимые old/new Git modes. Любой detected rename канонизируй как `delete` old path + `add` new path; copy — как неизменный old path + `add` new path. Так один и тот же rename/copy не меняет fingerprint из-за staging/commit или различий similarity detection, но изменение paths всё равно обнаруживается. Для существующего итогового regular file сохрани SHA-256 exact bytes. Для удаления используй base object ID и tombstone; для symlink, submodule, special path или недоступного файла сохрани доказуемую Git identity либо остановись fail-closed.
-3. Для каждого untracked regular file, отсутствующего в `review_base`, сформируй ту же canonical final operation `add`: path, доказуемый итоговый Git-compatible type/mode и SHA-256 exact bytes. После `git add`/commit эта запись обязана остаться идентичной tracked `add`. Бинарность не отменяет content hash, но невозможность выполнить security/content review остаётся blocker. Каталоги, внешние symlink targets и недоказуемые special files блокируют fingerprint.
-4. Добавление, удаление, rename/copy, type/mode change, изменение exact bytes, изменение `review_base` или другой существенной Git metadata обязаны менять manifest. Простое перемещение того же итогового tree между `untracked`, `unstaged`, `staged` и `committed` не включай в manifest как category change и не считай substantive change.
-5. Для канонического stage checklist разрешено нормализовать только значения полей внутри единственной корректной marker-пары `task-orchestration-state`, если раздел точно соответствует schema `/handoff` и delta является прямой служебной записью lifecycle state. Для этого path хешируй детерминированное содержимое со стабильными sentinels вместо значений state fields; raw bytes/diff всё равно остаются в exact `review_payload`.
-6. Не исключай изменения checklist вне bounded section, новые/удалённые требования, acceptance, technical documentation, implementation, tests или неожиданный текст внутри marker section. Если state-only delta, rename, binary/type metadata или итоговое содержимое нельзя однозначно нормализовать, freshness равна `unconfirmed` и workflow останавливается.
-7. Обновление orchestration section в PR body не меняет Git scope; не добавляй remote body к content fingerprint. Сам PR body остаётся каноническим state source для опубликованной non-stage задачи.
-8. Сформируй детерминированную UTF-8 JSON serialization `substantive_scope` с фиксированными ключами `schema`, `review_base` и `normalized_final_content_manifest`. Не включай category labels, raw Git outputs или отдельно переданные `task`/`acceptance`/ограничения: они полностью остаются в exact `review_payload`, а их изменения в tracked checklist/документации уже меняют final-content manifest. Используй фиксированную schema version, чтобы изменение алгоритма normalization не давало ложного совпадения.
-9. Рассчитай `substantive_scope_sha256` по UTF-8 bytes этой serialization. Не используй hash как доказательство качества review: он только идентифицирует итоговый проверенный scope.
-10. После завершённого pass сохрани в `Reviewed scope revision` оба значения: `review-payload-sha256=<exact hash>; substantive-scope-sha256=<content hash>; review-base=<commit>` и краткую отметку о применённой state-only normalization либо `none`.
+CLI получает один JSON object через UTF-8 stdin и возвращает один JSON object без file contents:
 
-При следующем запуске сравни новый `substantive_scope_sha256` с сохранённым:
+```json
+{"action":"inspect","schema":"ai-news-bot/substantive-scope@1","review_base":"<full commit oid>","repo_root":"<repository root>"}
+```
 
-- совпадение означает, что итоговое содержимое и существенная Git metadata не изменились; category-only add/stage/commit movement и служебный state не делают pass stale, уже завершённый pass не повторяй;
-- различие означает substantive scope change и переводит `Review gate` в `stale` до разрешённого следующего transition;
-- изменение, состоящее из исправлений подтверждённых findings и повторной verification, допускает соответствующий recheck;
-- новое изменение без связи с подтверждёнными findings не создаёт разрешение на recheck;
-- отсутствие сохранённого воспроизводимого identifier, ошибка normalization или противоречие hashes означает `freshness: unconfirmed`: не объявляй gate завершённым и не вызывай модель автоматически.
+После проверки inspect output и полного security preflight:
 
-`/start`, `/stage-status`, `/handoff` и `/stage-close` воспроизводят только этот же versioned normalization algorithm: заново определяют current `review_base`, получают полный raw final-tree diff и untracked paths, выполняют path preflight, локально хешируют exact bytes без вывода содержимого и сравнивают hash. Это отдельная freshness inspection, а не повторная сборка сохранённого `review_payload` и не новый review pass. Запрет повторного capture выше действует внутри одного model pass; он не запрещает последующую read-only проверку freshness. Любая ошибка команды, truncated output, небезопасный path или недоказуемая metadata/equivalence даёт `unconfirmed`.
+```json
+{"action":"calculate","schema":"ai-news-bot/substantive-scope@1","review_base":"<тот же full commit oid>","repo_root":"<repository root>","expected_inspection_sha256":"<подтверждённый inspect hash>","approved_paths":["<точный inspect path set>"],"state_checklist_path":"<approved canonical checklist path или null>"}
+```
+
+Вызов выполняй как отдельный Node.js process без shell interpolation путей. Request передавай как UTF-8 bytes, проверяй успешный exit и strict JSON response. Не выводи captured file contents. Обязательный порядок неизменен:
+
+```text
+inspect
+→ проверить schema/review_base/paths/metadata/inspection_sha256
+→ выполнить path и content security preflight
+→ сформировать exact approved_paths
+→ calculate с тем же schema/base и подтверждённым inspection_sha256
+```
+
+`calculate` до полного успешного preflight запрещён. Любая ошибка процесса, неизвестная/отсутствующая schema, path/metadata blocker, changed inspection manifest, несовпадение approved paths, unsupported file type, неоднозначная checklist normalization или изменение файла означает `freshness: unconfirmed` и fail-closed: не вызывай Reviewer и не выполняй автоматический lifecycle transition.
+
+Результат `calculate` является единственным источником `normalized_final_content_manifest` и `substantive_scope_sha256`. Полный `review_payload` всё равно содержит исходные Git snapshots/categories и bounded state без исключения; executable их не заменяет. Fingerprint идентифицирует scope, но не доказывает качество review или безопасность содержимого. Он стабилен при category-only commit неизменённых bytes и меняется при substantive path/content/type/mode/base delta; точные гарантии и ограничения задаются versioned executable и `docs/DECISIONS.md`.
+
+После завершённого pass сохрани в `Reviewed scope revision`: `substantive-scope-schema=ai-news-bot/substantive-scope@1; review-payload-sha256=<exact hash>; substantive-scope-sha256=<calculate hash>; review-base=<commit>` и normalization summary. При следующей проверке сравни schema, base и воспроизведённый calculate hash:
+
+- совпадение означает current scope; category-only movement и bounded state-only updates не делают pass stale;
+- различие означает `stale` до разрешённого transition;
+- unknown/missing schema, legacy unversioned hash или недоказуемая equivalence означает `unconfirmed`, а не v1 compatibility;
+- исправления подтверждённых Reviewer findings либо разрешённых post-review defect IDs после повторной verification могут открыть следующий bounded recheck; другое новое изменение recheck не разрешает.
+
+Обновление bounded section в PR body не входит в Git fingerprint. Любая запись PR body выполняется только по UTF-8 safety protocol `/handoff`, сохраняя весь текст вне единственной marker-пары.
 
 ## Цепочка моделей
 
@@ -222,7 +246,7 @@ HTTP `403` разрешает fallback только при отдельном я
 
 ## Обновление task-level state после pass
 
-Обновляй только Reviewer fields в каноническом source, выбранном до pass. Сохраняй подтверждённые значения, а не полный ответ Reviewer:
+Обновляй только Reviewer fields в каноническом source, выбранном до pass. Сохраняй подтверждённые значения, а не полный ответ Reviewer. Если source — non-stage PR body, до и после записи примени полный UTF-8 safety protocol `/handoff`; используй UTF-8 без BOM temporary file и `gh --body-file`, никогда console/PowerShell pipeline:
 
 - `Last completed pass` — фактически завершённый `initial`, `recheck-1` или `recheck-2`;
 - `Reviewed scope revision` — exact и substantive identifiers из текущего immutable snapshot;
@@ -269,7 +293,7 @@ pass=initial|recheck-1|recheck-2
 task=<краткая задача и scope>
 acceptance=<критерии приёмки и ограничения>
 verification=<фактически выполненные проверки>
-prior_findings=<для recheck: подтверждённые severity + stable finding ID>
+prior_findings=<для recheck: подтверждённые severity + stable Reviewer finding ID и/или stable post-review defect ID с evidence>
 confirmed_fixes=<для recheck: finding ID + фактическое исправление>
 verification_after_fixes=<для recheck: повторные команды/проверки и результаты>
 ```

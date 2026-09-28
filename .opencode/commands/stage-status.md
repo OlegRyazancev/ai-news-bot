@@ -36,10 +36,10 @@ git rev-parse HEAD
 Если текущая ветка не `main` и имеет remote/PR-контекст, read-only проверь:
 
 ```bash
-gh pr list --head <current-branch> --state all --limit 100 --json number,url,state,isDraft,baseRefName,headRefName,body
+gh pr list --head <current-branch> --state all --limit 100 --json number,url,state,isDraft,baseRefName,headRefName
 ```
 
-Не создавай PR и не меняй его состояние/body. Если `gh` недоступен, авторизация отсутствует или PR не найден, сообщи фактический результат (`Недоступно` / `PR отсутствует`), не угадывай.
+Не создавай PR и не меняй его состояние/body. Body выбранного PR читай только byte-safe способом по UTF-8 safety protocol `/handoff`: process bytes, strict UTF-8 decode, без console/PowerShell pipe transcoding, с проверкой marker-пары. Если `gh` недоступен, авторизация отсутствует или PR не найден, сообщи фактический результат (`Недоступно` / `PR отсутствует`), не угадывай.
 
 Для PR сначала примени единый selection algorithm `/start`: допустим только ровно один `OPEN` PR во всех состояниях с base `main` и точным head текущей ветки. Только после выбора выполни `gh pr checks <number>`. CI опиши как `success`, `pending`, `failed`, `not run` или `unknown` только по фактическому выводу. Non-zero exit `gh pr checks` может означать pending/failed; проанализируй список checks, а не называй это автоматически ошибкой `gh`.
 
@@ -68,7 +68,8 @@ gh pr list --head <current-branch> --state all --limit 100 --json number,url,sta
 - Покажи Reviewer classification/reason, last completed pass, reviewed scope revision, remaining rechecks, unresolved finding IDs, confirmed fixes, verification after fixes, accepted residual risks и review gate.
 - Проверь counter matrix и остальные общие инварианты из `/handoff`. Model fallback не увеличивает pass/recheck.
 - Определи stage-close position: до preliminary close, ожидание preliminary CI, подготовка/verification phase-2 tracked scope, ожидание Reviewer, исправления/recheck, финальный commit/CI либо Ready.
-- Сверь reviewed scope с текущим Git, воспроизведя единый versioned content-based contract раздела **«Freshness и scope revision»** `/review`, включая current merge-base, raw final-tree diff, untracked paths, path preflight и локальные exact-byte hashes без вывода содержимого. Category-only перенос того же итогового tree между untracked/unstaged/staged/committed и bounded orchestration-state updates не делает gate stale; изменение содержимого, paths, add/delete/rename/type/mode/base metadata, требований или технической документации делает gate `stale`. Невоспроизводимая equivalence — `unconfirmed`.
+- Сверь reviewed scope только через `.opencode/scripts/substantive-scope.mjs`, schema `ai-news-bot/substantive-scope@1`, по разделу **«Freshness и scope revision: единый executable contract»** `/review`. Выполни `inspect` с current full merge-base, проверь schema/base/paths/metadata/`inspection_sha256`, затем выполни существующий path/content security preflight. Только после успешного preflight передай exact `approved_paths` и подтверждённый hash в `calculate`; approved changed stage checklist передай отдельным path, иначе `null`. Не рассчитывай fingerprint самостоятельно.
+- Сравни returned schema/base/hash с reviewed revision. Category-only перенос того же итогового tree между untracked/unstaged/staged/committed и bounded orchestration-state updates не делает gate stale; изменение содержимого, paths, add/delete/rename/type/mode/base metadata, требований или технической документации делает gate `stale`. Missing/unknown schema, historical unversioned fingerprint, blocked preflight, executable/inspection mismatch или невоспроизводимая equivalence дают `unconfirmed` и fail-closed без автоматического transition.
 - Если pass/counter противоречат друг другу, выведи `ORCHESTRATION_STATE_CONFLICT`, оба значения и запрет автоматического продолжения. Не исправляй state в read-only команде.
 - `P0`–`P2`, непринятые findings, stale/unconfirmed required review, pending Decision Gate, неподтверждённый plan и обязательный незавершённый Architect являются orchestration blockers.
 - Не требуй Reviewer до подготовки и verification итогового phase-2 tracked scope. После этой точки при required Reviewer рекомендуй внешний `/review`; `/stage-close` сам его не запускает.

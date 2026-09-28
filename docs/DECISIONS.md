@@ -31,6 +31,38 @@
 | LLM Provider Budget | PostgreSQL-backed provider-wide state с UTC-дневным внутренним бюджетом и persisted `pausedUntil` | Атомарное reservation до реального API call учитывает retry/manual retry и переживает restart; транзакция не удерживается во время сети. Бюджет приложения не считается фактической квотой Google; MockProvider его не расходует. `model` хранит модель последнего reservation для диагностики, но budget/pause keyed по provider. Reservation не возвращается после неоднозначной infrastructure error; claim освобождается best-effort без изменения предыдущей retry policy |
 | LLM 429 Semantics | Остановить текущий batch и поставить весь provider на persisted pause минимум до `Retry-After` | Другие статьи не усугубляют quota exhaustion; provider `Retry-After` не ограничивается локальным `retryMaxDelay`, поэтому ранний повтор исключён |
 
+## Orchestration fingerprint и post-review recovery (2026-09-28)
+
+**Статус:** принято пользователем для исправления `ORCH-FP-001` и `ORCH-ENC-002`.
+
+### Единый versioned fingerprint executable
+
+- **Решение:** использовать общий dependency-free Node.js executable со schema `ai-news-bot/substantive-scope@1` вместо независимого воспроизведения byte-level алгоритма Markdown-командами.
+- **Причина:** прежний контракт не фиксировал полную canonical serialization, поэтому сохранённый `substantive_scope_sha256` нельзя было независимо воспроизвести в новой сессии.
+- **Граница компонента:** executable выполняет только `inspect` Git paths/metadata и `calculate` canonical final-content manifest/fingerprint. Orchestration policy, решение security preflight, immutable `review_payload`, model lifecycle и PR selection остаются в Developer-командах.
+- **Ограничения:** unknown/legacy schema даёт только `freshness: unconfirmed`; старому hash нельзя ретроактивно присваивать schema v1. Executable не является sandbox, не объявляет внешний path/content security preflight успешным и не доказывает, что Developer действительно его выполнил. Проверка manifest до/после и стабильности каждого файла уменьшает TOCTOU-риск, но не создаёт атомарный snapshot всей working tree.
+
+Security requirements для v1:
+
+- Git paths передаются NUL-delimited, декодируются как strict UTF-8, сортируются по unsigned UTF-8 bytes и не подвергаются Unicode/case normalization;
+- absolute/traversal/backslash paths, duplicate paths, symlink/submodule/special files, unsupported modes и неоднозначная Git metadata блокируют расчёт;
+- `calculate` принимает ожидаемый `inspection_sha256` и точный approved path set, повторяет inspection перед чтением и после него и останавливается при любом расхождении;
+- файлы открываются только внутри repository root после проверки всех path components; до и после exact-byte чтения проверяются file type, identity и metadata; содержимое файлов не выводится;
+- canonical JSON имеет фиксированный порядок ключей; add/delete/rename, exact bytes, binary content и Git modes входят в fingerprint, category-only движение между untracked/unstaged/staged/committed — нет;
+- normalization разрешена только для значений exact fields единственного корректного bounded `task-orchestration-state` section канонического stage checklist; любая неоднозначность завершается fail-closed.
+
+### Post-initial acceptance findings
+
+- **Решение:** подтверждённые после успешного `initial` runtime/acceptance defects могут открыть следующий существующий recheck при наличии stable finding ID, исправления и повторной verification.
+- Для `ORCH-FP-001` и `ORCH-ENC-002` разрешён только `recheck-1`: historical `initial` сохраняется, новый `initial` не запускается, counters не сбрасываются, после pass остаётся один recheck.
+- Recheck обязан проверить полный актуальный scope и создать новую согласованную пару immutable `review_payload_sha256` и v1 `substantive_scope_sha256`. Legacy hash остаётся отдельным historical evidence с `freshness: unconfirmed` и не объявляется актуальным.
+
+### Однократное восстановление PR body
+
+- **Решение:** полный PR body разрешено один раз восстановить подтверждённой CP437 → UTF-8 трансформацией без изменения машинных полей и подтверждённых значений.
+- До записи обязательны strict decode, exact inverse round-trip, одна marker-пара, один state section и отсутствие replacement characters; после записи удалённый body повторно читается и сравнивается по exact Unicode text/hash.
+- Для последующих обновлений body передаётся через UTF-8 byte/file API без console transcoding; любое post-write расхождение блокирует lifecycle.
+
 ## Решения по модели данных
 
 | Решение | Выбор | Причина |

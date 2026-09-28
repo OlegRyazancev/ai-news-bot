@@ -95,8 +95,8 @@ Fail-closed проверь по каноническому state:
 3. Через `gh pr list --head <current-branch> --state all` проверь все PR текущей ветки и получи как минимум `number,url,state,isDraft,baseRefName,headRefName`.
 4. Если найден PR `CLOSED`/`MERGED`, более одного PR, неверные head/base или иная неоднозначность — **STOP**, ничего в PR не меняй и не создавай дубликат.
 5. Существующий PR можно использовать только если он единственный, `OPEN`, его head точно равен текущей ветке, а base равен `main`.
-6. Только если PR для ветки действительно отсутствует во всех состояниях, сформируй body на основе `.github/pull_request_template.md` во временном файле вне Git и создай PR без интерактивного редактора: `gh pr create --draft --base main --head <current-branch> --title "<PR title>" --body-file <temporary-body-file>`.
-7. Перед `gh pr edit` повторно подтверди OPEN/head/base. Затем актуализируй body через `--body-file` на основе `.github/pull_request_template.md`.
+6. Только если PR для ветки действительно отсутствует во всех состояниях, сформируй body на основе `.github/pull_request_template.md` и создай PR без интерактивного редактора. Для create/edit строго примени UTF-8 safety protocol `/handoff`: byte-safe исходное чтение, сохранение exact Unicode text вне bounded section, временный файл UTF-8 без BOM через Node.js byte API, `gh ... --body-file`, обязательное post-write exact text/hash/marker verification. Console/PowerShell pipe transcoding и `--body` запрещены.
+7. Перед `gh pr edit` повторно подтверди OPEN/head/base. Затем актуализируй body только через проверенный `--body-file` protocol. При decode/hash/text/marker mismatch считай запись неуспешной, оставь PR Draft и **STOP** без дальнейшего lifecycle transition.
 
 ### 8. Дождаться CI предварительного HEAD
 
@@ -122,7 +122,7 @@ Fail-closed проверь по каноническому state:
 
 ### 10. Проверить Reviewer gate и freshness
 
-Применяй classification, transition/counter matrix, findings evidence, residual-risk и content-based freshness contract непосредственно из `AGENTS.md`, `/handoff` и `/review`; не создавай альтернативную матрицу.
+Применяй classification, transition/counter matrix, post-review defect rules, findings evidence, residual-risk и content-based freshness contract непосредственно из `AGENTS.md`, `/handoff` и `/review`; не создавай альтернативную матрицу.
 
 Обязательно проверь:
 
@@ -130,8 +130,8 @@ Fail-closed проверь по каноническому state:
 - при `required` — завершённый `initial` либо более поздний разрешённый pass; отсутствие сведений или `Last completed pass: none` не доказывает review;
 - согласованность `Last completed pass` и `Remaining rechecks` с общей matrix;
 - stable unresolved finding IDs, подтверждённые fixes и фактическую verification after fixes для выполненных recheck;
-- `Reviewed scope revision` с exact payload hash, content-based `substantive_scope_sha256` и review base;
-- актуальность итогового scope путём воспроизведения того же versioned normalized final-content manifest по разделу **«Freshness и scope revision»** `/review`, включая current merge-base, raw final-tree diff, untracked paths, path preflight и локальные exact-byte hashes без вывода содержимого;
+- `Reviewed scope revision` со schema `ai-news-bot/substantive-scope@1`, exact payload hash, `substantive_scope_sha256` и review base; legacy identifier без schema остаётся `unconfirmed`;
+- актуальность итогового scope только через `.opencode/scripts/substantive-scope.mjs` по разделу **«Freshness и scope revision: единый executable contract»** `/review`: `inspect` current full merge-base → validation paths/metadata/hash → существующий path/content security preflight → exact `approved_paths` → `calculate` с теми же schema/base/hash и approved checklist path либо `null`;
 - `Review gate: complete` только при актуальном scope и отсутствии непринятых blocking findings.
 
 Для `not-required` допустим только мотивированный state `Last completed pass: none`, `Remaining rechecks: 0`, `Review gate: complete`.
@@ -151,19 +151,19 @@ Freshness:
 - category-only перенос неизменных итоговых bytes между untracked/unstaged/staged/committed не делает review stale;
 - add/delete/rename/copy, path/content/type/mode/base changes, новые требования, implementation или техническая документация являются substantive;
 - при отличии `substantive_scope_sha256` поставь/считай gate `stale` и **STOP**; `/stage-close` не запускает новый pass;
-- если equivalence или normalization нельзя доказать, freshness равна `unconfirmed` и применяется **STOP**.
+- missing/unknown schema, failed security preflight, executable error, changed inspection manifest или недоказуемая equivalence/normalization дают `unconfirmed` и **STOP**. `calculate` до успешного preflight запрещён; собственная реализация fingerprint запрещена.
 
 ### 11. Финальный commit, push, CI и Ready
 
 Только при полностью подтверждённых Architecture и Review gates:
 
 1. Убедись, что после reviewed snapshot не появилось substantive changes. Разрешены только bounded state updates, PR metadata и category-only фиксация тех же проверенных bytes.
-2. Сделай финальный commit в текущей stage-ветке. Сразу пересчитай normalized final-content manifest и `substantive_scope_sha256`: category movement не должно изменить fingerprint.
+2. Сделай финальный commit в текущей stage-ветке. Сразу повтори тот же `inspect → preflight → calculate` executable protocol: category movement неизменённых bytes не должно изменить v1 fingerprint.
 3. Если fingerprint изменился или equivalence не доказана, **STOP** до push; не amend/reset и не объявляй review актуальным.
 4. Push выполни без force. Завершение неподтверждено до обязательного CI именно для актуального финального HEAD.
 5. При `pending` жди результата без лишних commits, PR оставь Draft. При `unavailable` сообщи конкретную проблему. При `failed` исследуй причину; любые substantive fixes требуют повторной verification, freshness check и разрешённого Reviewer transition до нового final push.
 6. Перед изменением PR body или состояния повторно проверь, что PR единственный, `OPEN`, head равен текущей ветке, base равен `main` и он не был closed/merged.
-7. Актуализируй PR body фактическими финальными результатами. Это не заменяет checklist state и не меняет reviewed Git scope.
+7. Актуализируй PR body фактическими финальными результатами только через UTF-8 safety protocol `/handoff` и проверь remote body после записи. Это не заменяет checklist state и не меняет reviewed Git scope.
 8. Только `success` обязательного CI именно для актуального финального HEAD подтверждает завершение и позволяет перевести Draft PR в Ready for review через `gh pr ready`.
 9. При повторном `/stage-close` не повторяй успешные preliminary/review/final gates, не создавай новый PR/section, не сбрасывай counters и не принимай residual risks автоматически; сверяй сохранённые факты с текущим HEAD/CI.
 10. Сообщи пользователю URL PR и что он готов к ручному review и предпочтительному **Squash and merge**.

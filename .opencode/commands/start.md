@@ -21,7 +21,7 @@ Read-only восстановить общий контекст проекта, �
 5. Если текущая ветка не `main`, проверь все PR текущей ветки без изменений:
 
    ```bash
-   gh pr list --head <current-branch> --state all --limit 100 --json number,url,state,isDraft,baseRefName,headRefName,body
+   gh pr list --head <current-branch> --state all --limit 100 --json number,url,state,isDraft,baseRefName,headRefName
    ```
 
 6. Изучи только релевантный существующий код, необходимый для понимания ближайшей задачи.
@@ -34,7 +34,7 @@ Read-only восстановить общий контекст проекта, �
 
 1. **Roadmap stage:** если текущая ветка соответствует `stage/NN-*`, найди ровно один `docs/checklists/NN-*.md` и читай task-level state только из него. PR body может быть производной сводкой и не заменяет checklist.
 2. Отсутствующий или дублированный checklist stage — process blocker. Не выбирай checklist другого номера и не восстанавливай state из PR.
-3. **Non-stage branch:** для `chore/...`, `docs/...` или `fix/...` отфильтруй `gh pr list` по точному `headRefName=<current-branch>`. PR body допустим как source только если во всех состояниях найден ровно один PR, он `OPEN`, `baseRefName=main`, а head точно равен текущей ветке. Только после выбора такого PR выполни `gh pr checks <number>`.
+3. **Non-stage branch:** для `chore/...`, `docs/...` или `fix/...` отфильтруй `gh pr list` по точному `headRefName=<current-branch>`. PR body допустим как source только если во всех состояниях найден ровно один PR, он `OPEN`, `baseRefName=main`, а head точно равен текущей ветке. Полный body получай byte-safe способом по UTF-8 safety protocol `/handoff`: без console/PowerShell pipe transcoding, со strict UTF-8 decode и validation marker-пары. Только после выбора такого PR выполни `gh pr checks <number>`.
 4. `CLOSED`/`MERGED`, несколько PR, неверные head/base или неоднозначность означают `Недостаточно подтверждённых данных`; не выбирай произвольный PR.
 5. **Non-stage без корректного PR:** durable task-level source отсутствует. Текущая conversation может помочь только в этой Developer-сессии, но lossy summary или handoff-текст не доказывают прохождение обязательного gate.
 6. На `main` не привязывай task-level state к случайному открытому PR или checklist. Показывай его только если активный roadmap-stage source однозначно установлен проектными документами; иначе укажи `не применимо / активная задача не установлена`.
@@ -55,10 +55,11 @@ Read-only восстановить общий контекст проекта, �
 ## Сверка с актуальным Git/PR/CI
 
 - Сопоставь сохранённое состояние с текущими branch, full HEAD SHA, clean/dirty status, PR metadata и CI. Saved state не переопределяет live GitHub Actions.
-- Для актуального Reviewer state должны существовать `review-payload-sha256`, content-based `substantive-scope-sha256` и `review-base` по каноническому `/review`. Exact payload hash идентифицирует исходный immutable snapshot, но freshness не определяется совпадением категорий Git или HEAD.
-- Воспроизведи normalized final-content manifest и versioned serialization строго по разделу **«Freshness и scope revision»** `/review`: заново определи current merge-base, получи полный raw final-tree diff и untracked paths, выполни path preflight и локально хешируй exact bytes без вывода содержимого. Сравни current base с сохранённой review base, затем `substantive-scope-sha256`. Простое перемещение того же итогового tree между untracked/unstaged/staged/committed и bounded orchestration-state updates не делает review stale, поэтому Review → final commit без изменения содержимого остаётся актуальным.
+- Для актуального Reviewer state должны существовать `substantive-scope-schema=ai-news-bot/substantive-scope@1`, `review-payload-sha256`, `substantive-scope-sha256` и `review-base` по каноническому `/review`. Exact payload hash идентифицирует исходный immutable snapshot, но freshness не определяется совпадением категорий Git или HEAD. Historical identifier без schema остаётся legacy evidence с `freshness: unconfirmed`; не объявляй его v1 задним числом.
+- Воспроизведи fingerprint только через `.opencode/scripts/substantive-scope.mjs` и раздел **«Freshness и scope revision: единый executable contract»** `/review`. Обязательный порядок: `inspect` с current full merge-base и schema v1 → validation paths/metadata/hash → существующий path/content security preflight → exact `approved_paths` → `calculate` с теми же base/schema/`inspection_sha256`. Для approved changed stage checklist передай его path, иначе `null`. Не реализуй serialization или hashing самостоятельно и не вызывай `calculate` до preflight.
+- Сравни returned schema/base/`substantive_scope_sha256` с current reviewed revision. Простое перемещение того же итогового tree между untracked/unstaged/staged/committed и bounded orchestration-state updates не делает review stale, поэтому Review → final commit без изменения содержимого остаётся актуальным.
 - Изменение paths, add/delete/rename/copy semantics, exact bytes, file type/mode, review base, требований, implementation или технической документации делает `Review gate: stale`, даже если сохранено `complete`.
-- Если identifier отсутствует, binary/special path или metadata нельзя однозначно нормализовать либо equivalence не доказана, freshness равна `unconfirmed` и review gate нельзя считать завершённым.
+- Если schema/identifier отсутствует или неизвестна, preflight не пройден, executable завершился ошибкой, inspection manifest изменился, binary/special path или metadata нельзя однозначно обработать либо equivalence не доказана, freshness равна `unconfirmed` и review gate нельзя считать завершённым. Любое расхождение обрабатывай fail-closed без автоматического transition.
 - При stale/unconfirmed scope не запускай Reviewer и не меняй state: `/start` только показывает blocker и следующий требуемый шаг.
 - Content-based freshness не заменяет live PR/CI inspection: после final commit CI оценивается только для актуального HEAD.
 - Отсутствие `/handoff` не является проблемой, если канонический checklist/PR body содержит актуальный валидный state. Наличие handoff-ответа не компенсирует отсутствующий канонический source.
