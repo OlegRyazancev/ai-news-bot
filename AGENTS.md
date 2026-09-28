@@ -42,6 +42,134 @@
 7. **PR/CI** — Commit и push выполняются в рабочую ветку; изменения проходят через PR и GitHub Actions
 8. **Отчёт** — Резюмируй, что сделано, что работает, следующие шаги
 
+## Единая мультиагентная оркестрация
+
+### Роли и последовательность
+
+- Текущий основной агент в Developer-сессии является единственным координатором задачи. Отдельный Developer agent не создаётся.
+- Architect и Reviewer — вспомогательные read-only subagents. Они не координируют друг друга, не принимают решения за пользователя и не заменяют обязанности Developer.
+- Developer напрямую вызывает существующих subagents через поддерживаемый OpenCode tool, применяя канонические контракты `.opencode/commands/architect.md` и `.opencode/commands/review.md`. Вложенные вызовы Markdown slash-команд не проектируются и не считаются поддерживаемой оркестрацией.
+- Нормативная последовательность задачи:
+
+```text
+Task intake
+→ Architect classification
+→ Architect, только если required
+→ Architecture Decision Gate
+→ явное подтверждение stage plan, если требуется
+→ implementation
+→ применимая verification
+→ preliminary `/stage-close` и CI, если это roadmap stage
+→ подготовка и verification итогового tracked scope stage
+→ Reviewer classification
+→ initial review, если required
+→ исправление подтверждённых findings
+→ повторная применимая verification
+→ recheck, если необходим и разрешён
+→ финальные Git / PR / CI gates
+→ stage completion, если применимо
+→ ручной merge пользователем
+```
+
+- Обязательный gate нельзя считать выполненным по умолчанию, по молчанию пользователя или только по наличию кода. При blocker Developer останавливает затронутую часть workflow, сообщает причину и требуемое действие.
+- Эта policy является обязательной инструкцией для Developer, а не программно гарантированной state machine OpenCode. Существующие требования к stage approval, verification, Git/PR/CI и ручному merge сохраняются.
+
+### Architect policy
+
+До реализации Developer классифицирует Architect как `required` или `not-required` и фиксирует конкретное обоснование.
+
+Architect `required`, если задача содержит существенное изменение хотя бы одной из областей:
+
+- архитектурные контракты или границы компонентов;
+- взаимодействие компонентов;
+- persistence, concurrency или idempotency semantics;
+- внешние интеграции;
+- security/trust boundaries;
+- инфраструктурная архитектура или runtime topology;
+- обработка существенных partial failures, не покрытая действующими решениями.
+
+Architect `not-required` для локального bugfix, простого refactoring, тривиальной документации, реализации полностью применимого существующего ADR и обычного code review. Действующий ADR не требует повторного согласования без нового требования, конфликта, изменившегося ограничения или иного существенного нового обстоятельства.
+
+Для неизменной задачи разрешён максимум один архитектурный анализ. Model fallback внутри одного запуска канонического `/architect` protocol остаётся частью того же анализа и не увеличивает этот счётчик. Дополнительный анализ разрешён только после зафиксированного существенного изменения требований, решений или контекста с описанием material context delta; повторный анализ без новых данных запрещён.
+
+Developer проверяет содержательность результата Architect и переносит применимые ограничения, риски и verification requirements в существующий plan/checklist. Если обязательный Architect недоступен, implementation блокируется. Если выявлено новое значимое решение, применяется Architecture Decision Gate: Developer останавливается до явного решения пользователя и фиксирует принятое решение в `docs/DECISIONS.md`. Существующий `.opencode/commands/architect.md` остаётся каноническим для security preflight, immutable context, model fallback, model-attempt limits и quality gate; эти протоколы здесь не дублируются.
+
+### Reviewer policy
+
+После implementation и применимой verification Developer классифицирует Reviewer как `required` или `not-required` и фиксирует конкретное обоснование.
+
+Reviewer `required` для:
+
+- application code;
+- конфигурации приложения;
+- OpenCode agents и commands;
+- значимых изменений development workflow;
+- существенных изменений технической документации.
+
+Мотивированный `not-required` допускается только для тривиальных текстовых изменений, не меняющих поведение, process contract или технический смысл.
+
+Initial review запускается только после implementation и применимой verification. Для roadmap stage initial review выполняется после успешного preliminary CI и подготовки всех существенных phase-2 изменений checklist и документации: Reviewer должен видеть итоговый tracked scope до финального commit/push/CI. `/stage-close` не вызывает Reviewer автоматически, а останавливается для внешнего single-pass `/review`; после актуального review повторный `/stage-close` продолжает финальные gates. Developer проверяет доказательность findings по коду и требованиям, исправляет только подтверждённые замечания и повторяет применимые проверки перед recheck.
+
+Reviewer lifecycle ограничен:
+
+- один `initial` pass;
+- не более одного `recheck-1` и одного `recheck-2`;
+- каждый вызов Reviewer выполняет ровно один review pass;
+- model fallback внутри одного pass не меняет его имя и не расходует recheck;
+- recheck запрещён без исправлений или релевантного изменения scope и без повторной применимой verification;
+- после `recheck-2` новые автоматические recheck запрещены.
+
+Подтверждённый post-review runtime/acceptance defect может открыть следующий существующий recheck, если у него есть stable ID, проверяемое evidence, относящееся исправление и успешная повторная verification. Это не разрешает повторный `initial`, не сбрасывает counters и не превращает произвольное новое требование в finding. Для согласованных `ORCH-FP-001` и `ORCH-ENC-002` historical `initial` сохраняется с двумя оставшимися recheck, legacy fingerprint остаётся `unconfirmed`, а после исправлений разрешён только `recheck-1`, создающий новую согласованную пару exact payload/v1 substantive identifiers для полного актуального scope.
+
+Существующий `.opencode/commands/review.md` остаётся каноническим для snapshot, security preflight, model fallback, model-attempt limits и отчёта одного pass. Findings Reviewer не отменяют обязательные build/tests/runtime/user verification, документационный gate или CI.
+
+### Substantive scope fingerprint
+
+- Единственная реализация fingerprint — `.opencode/scripts/substantive-scope.mjs`, schema `ai-news-bot/substantive-scope@1`. `/review`, `/start`, `/stage-status`, `/handoff` и `/stage-close` обязаны использовать этот executable и не воспроизводить serialization/hashing самостоятельно.
+- Обязательный порядок: `inspect` → validation paths/metadata/`inspection_sha256` → существующий path/content security preflight → exact `approved_paths` → `calculate` с подтверждёнными schema/base/hash. `calculate` до успешного preflight запрещён.
+- Executable не является sandbox, не объявляет содержимое безопасным, не доказывает выполнение Developer preflight и не создаёт атомарный snapshot всей working tree. Любая ошибка, unknown/missing schema, legacy unversioned hash, blocked preflight, changed inspection manifest или недоказуемая equivalence означает fail-closed `freshness: unconfirmed` без автоматического transition.
+- Current reviewed revision хранит `substantive-scope-schema`, `review-payload-sha256`, `substantive-scope-sha256` и `review-base`. Historical hash без schema нельзя ретроактивно объявлять v1.
+
+### Residual risk policy
+
+Если после `recheck-2` остаются подтверждённые findings, Developer останавливает workflow и не объявляет задачу или stage завершёнными.
+
+- `P0`, `P1` и `P2` по умолчанию блокируют завершение.
+- Конкретный `P3` может быть принят как residual risk только по явному решению пользователя с фиксацией finding ID и принятого риска в task-level state.
+- Молчание пользователя, отсутствие ответа или общий призыв продолжить не являются принятием residual risk.
+- Принятие residual risk не отменяет обязательную verification, CI или ручной merge.
+
+### Task-level orchestration state
+
+Developer поддерживает минимальное проверяемое состояние задачи:
+
+- Architect classification (`required` / `not-required`) и обоснование;
+- Architect outcome и применённые ограничения без полного transcript;
+- Architecture Decision Gate (`none` / `pending` / `resolved`);
+- ссылка на согласованное архитектурное решение, если оно требовалось;
+- Stage plan approval (`not-applicable` / `pending` / `confirmed`);
+- Reviewer classification (`required` / `not-required`) и обоснование;
+- последний завершённый pass (`none` / `initial` / `recheck-1` / `recheck-2`);
+- unresolved finding IDs;
+- выполненные исправления;
+- результаты повторной verification;
+- remaining rechecks (`2` / `1` / `0`);
+- явно accepted residual risks с finding ID и решением пользователя.
+
+Не сохраняй полные transcripts, chain-of-thought, скрытые рассуждения или raw provider payload. Состояние обновляется по подтверждённым фактам; неизвестное не заменяется предположением.
+
+### Источники истины оркестрации
+
+- Глобальные orchestration rules: `AGENTS.md`.
+- Архитектурные решения: `docs/DECISIONS.md`.
+- Orchestration state roadmap stage: существующий stage checklist.
+- Orchestration state non-stage задачи: текущая Developer-сессия до публикации, затем body существующего PR.
+- Реализация и точный changed scope: Git.
+- Результат CI для конкретного HEAD: GitHub Actions.
+- `/handoff`: производная сводка, а не самостоятельный source of truth.
+
+Не дублируй один task-level state как независимые канонические записи. Для stage PR body может содержать производную сводку или ссылку на checklist, но checklist остаётся каноном. Если non-stage задача не имеет PR и Developer-сессия завершается, полное автоматическое восстановление не гарантируется; до обновления `/handoff` Developer обязан явно сообщить это ограничение и предоставить структурированную сводку для переноса.
+
 ## GitHub branch / PR / CI
 
 - `main` — default/protected branch и каноническое состояние проекта. Application/stage work напрямую в `main` запрещена.
@@ -51,8 +179,9 @@
 - После первого meaningful push stage-ветки агент создаёт Draft PR неинтерактивной командой `gh pr create --draft --base main --head <текущая ветка> --title "<PR title>" --body-file <temporary-body-file>`. Body формируется на основе `.github/pull_request_template.md`; временный файл хранится вне Git и не коммитится. Для non-stage PR неприменимые stage-поля помечаются `N/A` с причиной.
 - PR поддерживается актуальным по мере работы. CI проверяется через `gh pr checks`; required check `CI/Lint, build, and test (pull_request)` нельзя переименовывать без необходимости.
 - Перед созданием или изменением PR агент проверяет все PR текущей ветки: допустим только один `OPEN` PR с `head=<текущая ветка>` и `base=main`. При найденном `CLOSED`/`MERGED` PR, неверных head/base или неоднозначности агент останавливается и не создаёт дубликат.
+- PR body читается и записывается только byte-safe способом: strict UTF-8 без BOM/replacement characters, без console/PowerShell pipe transcoding. Изменение сохраняет exact Unicode text вне единственной bounded marker-пары, использует уникальный temporary file вне Git через byte API и `gh ... --body-file`, затем обязательно повторно получает remote body и сравнивает exact text/hash/markers. Любое расхождение блокирует дальнейший lifecycle. Полный operational protocol определён в `.opencode/commands/handoff.md`.
 - Если `gh` отсутствует, не авторизован или GitHub недоступен, GitHub gate считается незавершённым: нельзя объявлять CI успешным или переводить PR в Ready. Агент сообщает конкретную причину и необходимое действие, не устанавливая и не перенастраивая инструменты без необходимости.
-- `/stage-close` выполняется в две фазы: после предварительных локальных/runtime/user/docs gates изменения push-ятся без финальной отметки этапа; после успешного CI обновляется окончательный статус этапа. Если это создаёт новый commit, завершение считается неподтверждённым до результата обязательного CI именно для актуального финального HEAD: при `pending` агент ждёт без лишних корректирующих commits и PR остаётся Draft; при `unavailable` сообщает проблему и не объявляет этап завершённым; при `failed` исправляет причину и повторяет необходимые проверки; только `success` подтверждает завершение и разрешает Ready for review.
+- `/stage-close` выполняется в две фазы. Phase 1 после предварительных local/runtime/user/docs и Architecture gates push-ит preliminary HEAD без финальной отметки и ждёт его CI. Phase 2 после успешного preliminary CI подготавливает все финальные существенные checklist/documentation/status изменения и выполняет verification итогового tracked scope, затем останавливается для внешнего Reviewer lifecycle. Только актуальный review итогового scope разрешает финальный commit/push и обязательный CI финального HEAD; после review допустимы лишь bounded orchestration-state updates, category-only перенос проверенных bytes в commit и PR-body/CI metadata. Любое новое существенное изменение делает review stale и блокирует Ready. При `pending` агент ждёт без лишних корректирующих commits и PR остаётся Draft; при `unavailable` сообщает проблему и не объявляет этап завершённым; при `failed` исправляет причину, повторяет verification и применимый Reviewer lifecycle; только `success` актуального финального HEAD подтверждает завершение и разрешает Ready for review.
 - Merge всегда выполняет только пользователь; предпочтительный метод — **Squash and merge**. После merge локальный `main` синхронизируется перед следующей работой.
 
 Агент может без отдельного разрешения пользователя:
@@ -125,7 +254,7 @@
 
 ## Жизненный цикл этапа
 
-1. Каждый крупный этап из `docs/ROADMAP.md` проходит: **Актуальный main → Stage branch → Анализ → Checklist → План → Подтверждение пользователя → Реализация → Локальная проверка → Draft PR/CI → Закрытие → Ready for review → Ручной merge**.
+1. Каждый крупный этап из `docs/ROADMAP.md` проходит: **Актуальный main → Stage branch → Анализ/checklist → Architect classification → Architect при `required` → Decision Gate → План → Подтверждение пользователя → Реализация → Verification → preliminary `/stage-close`/CI → финальный tracked scope → Reviewer classification → review lifecycle при `required` → финальный commit/push/CI → Ready for review → Ручной merge**.
 2. Для каждого активного этапа существует максимум один checklist в `docs/checklists/` с именем `<двузначный номер>-<короткий-slug>.md`.
 3. Checklist создаётся агентом только после анализа текущего состояния и до начала реализации этапа. Пользователь не должен создавать его вручную.
 4. Checklist формируется на основе `docs/ROADMAP.md`, `docs/CURRENT_STATE.md`, `docs/BACKLOG.md`, `docs/DECISIONS.md`, `docs/ARCHITECTURE.md` и фактического кода.
@@ -141,10 +270,10 @@
 14. Source of truth для `/stage-status` остаются соответствующие проектные документы.
 15. Каждый checklist должен содержать два явно разделённых раздела проверки: **«Что тестирует агент»** (build, lint, тесты и доступная runtime-проверка) и **«Что пользователь тестирует вручную»** (пошаговые действия и ожидаемые результаты); пользовательские пункты отмечаются выполненными только после явного подтверждения пользователя.
 16. Подтверждение ручной проверки закрывает только соответствующие пользовательские пункты checklist и само по себе не закрывает этап.
-17. Статус этапа меняется на `✅ Завершено`, а текущий фокус roadmap переключается только в окончательной фазе `/stage-close` после успешного CI предварительного HEAD либо после отдельного явного запроса пользователя «закрой этап» с теми же обязательными gates; до merge эти изменения существуют только в stage-ветке.
+17. Branch-only статус этапа `✅ Завершено` и переключение roadmap-фокуса подготавливаются только в phase 2 `/stage-close` после успешного CI preliminary HEAD либо после отдельного явного запроса пользователя «закрой этап» с теми же обязательными gates. Эти tracked изменения входят в итоговый snapshot Reviewer и до актуального review, final CI и merge не означают подтверждённого или канонического завершения.
 18. Если пользователь обнаружил дефект во время ручной приёмки, затронутые acceptance/verification-пункты снова считаются незавершёнными. После исправления обязательны повторные build, lint, применимые тесты, targeted runtime-проверка, повторное подтверждение пользователя, аудит документации и финальный diff review.
 19. `/stage-start` определяет этап только по `docs/ROADMAP.md`, обеспечивает корректную stage-ветку, выполняет анализ/checklist/план и останавливается до изменения application code.
-20. `/stage-close` выполняется только в соответствующей stage-ветке: сначала подтверждает предварительные gates и push-ит незакрывающие stage изменения, затем ждёт успешный CI, выполняет окончательное обновление статуса, повторно ждёт CI при новом commit и только после этого переводит PR в Ready for review; merge не выполняет.
+20. `/stage-close` выполняется только в соответствующей stage-ветке: сначала подтверждает предварительные gates, push-ит незакрывающие stage изменения и ждёт успешный preliminary CI; затем подготавливает и проверяет весь финальный tracked scope и останавливается для внешнего Reviewer lifecycle. Повторный `/stage-close` при актуальном review выполняет финальный commit/push, ждёт CI этого HEAD и только после успеха переводит PR в Ready for review; merge не выполняет.
 21. Если локальные проверки, GitHub-доступ или CI падают/недоступны, этап не закрывается: агент исследует и исправляет доступную проблему в рамках текущей stage-ветки либо сообщает конкретное требуемое действие.
 22. `main` остаётся каноническим состоянием до merge PR. Подготовленный `/stage-close` статус становится каноническим только после merge; следующая работа начинается от обновлённого `main`.
 
@@ -153,6 +282,9 @@
 Этап готов к закрытию только когда:
 
 - обязательная реализация завершена;
+- task-level orchestration state актуален и согласован с текущим scope;
+- Architect classification зафиксирована, при `required` анализ завершён, нет pending Architecture Decision Gate, а Stage plan явно подтверждён;
+- Reviewer classification зафиксирована после подготовки итогового tracked scope, при `required` review lifecycle завершён, проверенный scope актуален и нет непринятых blocking findings;
 - `npm run build` проходит;
 - `npm run lint` проходит;
 - тесты проходят, если они существуют или требуются этапом;
@@ -166,7 +298,9 @@
 - PR существует (Draft до завершения gates) и его body актуален;
 - GitHub Actions CI для актуального head commit прошёл успешно.
 
-Если хотя бы один обязательный пункт не выполнен, этап нельзя готовить к `✅ Завершено` и переводить PR в Ready for review. Даже после успешного `/stage-close` канонический статус в `main` меняется только после ручного merge пользователем.
+После актуального review финальный commit может только зафиксировать те же проверенные bytes и разрешённые bounded orchestration-state updates. Category-only перемещение неизменного содержимого между untracked/unstaged/staged/committed не делает review stale; это подтверждается content-based `substantive_scope_sha256` из `/review`. Любое изменение итогового содержимого, путей, rename/delete/add semantics, значимой Git metadata, требований или технической документации требует freshness check и блокирует Ready до разрешённого Reviewer transition. Если эквивалентность доказать нельзя, применяется fail-closed поведение.
+
+Если хотя бы один обязательный пункт не выполнен, этап нельзя объявлять подтверждённо завершённым или переводить PR в Ready for review. Единственное промежуточное исключение — branch-only подготовка completion/status changes в phase 2 после successful preliminary CI, чтобы Reviewer проверил полный итоговый tracked scope; она не закрывает stage. Даже после успешного `/stage-close` канонический статус в `main` меняется только после ручного merge пользователем.
 
 ## Decision Gate
 
