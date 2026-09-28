@@ -41,15 +41,11 @@ Developer выполняет security preflight и передаёт один к�
 /stage-status
 → выполнить следующий пункт checklist
 → локальные проверки
-→ /review pass=initial task="..." acceptance="..." verification="..."
-→ исправить подтверждённые замечания и повторить проверки
-→ при необходимости /review pass=recheck-1|recheck-2 с finding ID и исправлениями
-→ commit + push в stage-ветку
-→ после первого meaningful push агент создаёт Draft PR в main
-→ gh pr checks
+→ выполнить и подтвердить обязательную ручную проверку
+→ перейти к preliminary /stage-close
 ```
 
-Developer на `openai/gpt-5.6-sol#high` передаёт Reviewer полный changed-files manifest и один immutable committed/staged/unstaged/untracked snapshot после локального security preflight. Reviewer работает без shell в foreground child: Primary — `google/gemini-3.8-flash`, затем только при подтверждённой provider error допускаются `google/gemini-3.5-flash-lite` и `openai/gpt-5.6-luna-fast` (не более трёх model attempts на один pass). Разрешены одно первоначальное ревью и максимум две сфокусированные повторные проверки.
+Reviewer roadmap stage запускается только после preliminary CI и подготовки всего phase-2 tracked scope. Developer передаёт полный changed-files manifest и один immutable committed/staged/unstaged/untracked snapshot после локального security preflight. Reviewer работает без shell в foreground child: Primary — `google/gemini-3.8-flash`, затем только при подтверждённой provider error допускаются `google/gemini-3.5-flash-lite` и `openai/gpt-5.6-luna-fast` (не более трёх model attempts на один pass). Разрешены одно первоначальное ревью и максимум две сфокусированные повторные проверки.
 
 Все три Reviewer-модели отдельно runtime-проверены, а основной Primary-сценарий `/review` успешно прошёл на полном changed scope. Автоматическое переключение Reviewer при реальной provider error пока не подтверждено. Reviewer не заменяет local/runtime/user/CI gates. PR body ведётся по `.github/pull_request_template.md`. Ошибки локальных проверок и CI исправляются в той же stage-ветке.
 
@@ -58,16 +54,22 @@ Developer на `openai/gpt-5.6-sol#high` передаёт Reviewer полный 
 ```text
 выполнить ручной раздел checklist и сообщить результат
 /stage-close
-→ предварительные local/runtime/user/docs/diff gates
-→ commit + push без финального закрытия stage
-→ проверить OPEN PR с правильными head/base и дождаться успешного CI
-→ окончательно обновить статус stage и push
-→ если появился новый commit, снова дождаться CI нового HEAD
-→ только после этого PR становится Ready for review
+→ preliminary local/runtime/user/docs/Architecture gates
+→ preliminary commit + push без финального закрытия stage
+→ проверить OPEN Draft PR и дождаться successful preliminary CI
+→ подготовить все финальные checklist/roadmap/state изменения
+→ проверить итоговый tracked scope и остановиться для Reviewer
+/review pass=initial task="..." acceptance="..." verification="..."
+→ исправить подтверждённые findings и повторить verification
+→ при необходимости отдельные /review pass=recheck-1|recheck-2
+/stage-close
+→ подтвердить freshness итогового scope без повторного initial
+→ final commit + push и CI актуального HEAD
+→ только после successful final CI PR становится Ready for review
 → пользователь выполняет review и Squash and merge
 ```
 
-При недоступном `gh`, ошибке авторизации, недоступном GitHub или неуспешном CI stage не закрывается и PR не переводится в Ready. `/stage-close` не выполняет merge. До merge подготовленный статус существует только в stage-ветке; каноническим он становится в `main` после merge.
+Category-only перенос неизменных bytes в final commit и bounded orchestration-state updates не делают review stale. Любое новое изменение содержимого, путей, требований, технической документации или значимой Git metadata после review блокирует Ready; при недоказуемой equivalence применяется fail-closed. При недоступном `gh`, ошибке авторизации, недоступном GitHub или неуспешном CI stage не закрывается и PR не переводится в Ready. `/stage-close` не выполняет merge. До merge подготовленный статус существует только в stage-ветке; каноническим он становится в `main` после merge.
 
 ## После merge
 
